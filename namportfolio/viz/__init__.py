@@ -17,6 +17,13 @@ except ImportError as exc:  # pragma: no cover
     ) from exc
 
 from . import theme
+from .holdings import (
+    plot_allocation,
+    plot_characteristics,
+    plot_concentration,
+    plot_contribution,
+    plot_turnover,
+)
 from .performance import (
     plot_annual_returns,
     plot_cumulative_returns,
@@ -63,4 +70,10 @@ __all__ = [
     "plot_distribution",
     "plot_distribution_stats",
     "plot_signal_correlation",
+    # F3 保有分析
+    "plot_allocation",
+    "plot_concentration",
+    "plot_contribution",
+    "plot_characteristics",
+    "plot_turnover",
 ]

@@ -5,7 +5,7 @@ from matplotlib import pyplot as plt
 from matplotlib.colors import to_rgba
 from matplotlib.figure import Figure
 
-from namportfolio import quantile, signals, viz
+from namportfolio import holdings, quantile, signals, viz
 from namportfolio.core.errors import ValidationError
 from namportfolio.performance import MONTH_END
 from namportfolio.viz import theme
@@ -339,6 +339,74 @@ class TestSignalCharts:
     def test_correlation_requires_square(self, panel):
         with pytest.raises(ValidationError, match="正方行列"):
             viz.plot_signal_correlation(pd.DataFrame(np.zeros((2, 3))))
+
+
+class TestHoldingCharts:
+    @pytest.fixture
+    def panel(self):
+        dates = pd.date_range("2023-01-31", periods=12, freq=MONTH_END)
+        rng = np.random.default_rng(13)
+        rows = []
+        for date in dates:
+            raw = rng.random(20)
+            weights = raw / raw.sum()
+            for i, w in enumerate(weights):
+                rows.append(
+                    {
+                        "date": date,
+                        "bid": f"JP{i:04d}",
+                        "weight": w,
+                        "bench_weight": 0.05,
+                        "ret_1m": rng.normal(0, 0.04),
+                        "sector": ["A", "B", "C"][i % 3],
+                        "per": rng.uniform(8, 30),
+                    }
+                )
+        return pd.DataFrame(rows)
+
+    def test_allocation_stacked(self, panel):
+        alloc = holdings.allocation(panel, by="sector")
+        fig = viz.plot_allocation(alloc)
+        assert len(fig.axes[0].collections) == 3, "積み上げ面（セグメントごとに 1 面）"
+        assert len(fig.axes[0].lines) == 0, "線ではない"
+
+    def test_active_allocation_falls_back_to_lines(self, panel):
+        active = holdings.allocation(panel, by="sector", benchmark_weight="bench_weight")
+        fig = viz.plot_allocation(active)
+        assert n_series(fig) == 3, "負の値があるので線になる"
+
+    def test_stacked_rejected_when_negative(self, panel):
+        active = holdings.allocation(panel, by="sector", benchmark_weight="bench_weight")
+        with pytest.raises(ValidationError, match="積み上げ面にできません"):
+            viz.plot_allocation(active, stacked=True)
+
+    def test_concentration(self, panel):
+        conc = holdings.concentration(panel)
+        assert isinstance(viz.plot_concentration(conc), Figure)
+
+    def test_contribution_uses_polarity_colors(self, panel):
+        top = holdings.top_contributors(panel, forward_return="ret_1m", n=3)
+        fig = viz.plot_contribution(top)
+        colors = [bar.get_facecolor() for bar in fig.axes[0].containers[0]]
+        assert len(set(colors)) == 2, "正と負の 2 色だけ"
+
+    def test_characteristics(self, panel):
+        chars = holdings.characteristics(panel, columns=["per"])
+        assert isinstance(viz.plot_characteristics(chars, metric="per"), Figure)
+
+    def test_characteristics_unknown_metric(self, panel):
+        chars = holdings.characteristics(panel, columns=["per"])
+        with pytest.raises(ValidationError, match="必須カラム"):
+            viz.plot_characteristics(chars, metric="pbr")
+
+    def test_turnover(self, panel):
+        series = holdings.turnover(panel)
+        fig = viz.plot_turnover(series)
+        assert len(fig.axes[0].texts) == 1, "平均値のラベル"
+
+    def test_turnover_rejects_frame(self, panel):
+        with pytest.raises(ValidationError, match="Series のみ"):
+            viz.plot_turnover(holdings.turnover(panel).to_frame())
 
 
 class TestTheme:

@@ -42,6 +42,7 @@ __all__ = [
     "ordinal_colors",
     "sequential_cmap",
     "diverging_cmap",
+    "polarity_colors",
     "rc_params",
     "apply_style",
     "styled",
@@ -208,6 +209,21 @@ def diverging_cmap(mode: Mode | None = None) -> LinearSegmentedColormap:
     return LinearSegmentedColormap.from_list(
         "npf_diverging", [negative, _CHROME[mode]["neutral"], positive]
     )
+
+
+def polarity_colors(values, mode: Mode | None = None) -> list[str]:
+    """正負で色を分ける（発散配色の両極）。
+
+    寄与度や超過リターンのように「どちら側か」が意味を持つ棒に使う。順序でも
+    識別でもないので、categorical や ordinal を割り当てない。
+    """
+    mode = mode or _mode
+    positive = _POLES[POSITIVE_HUE]
+    negative = _POLES["red" if POSITIVE_HUE == "blue" else "blue"]
+    return [
+        _CHROME[mode]["muted"] if np.isnan(v) else (positive if v >= 0 else negative)
+        for v in np.asarray(values, dtype=float)
+    ]
 
 
 def rc_params(mode: Mode | None = None) -> dict[str, Any]:
