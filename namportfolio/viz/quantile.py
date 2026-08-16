@@ -14,12 +14,15 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 import numpy as np
 import pandas as pd
 from matplotlib.figure import Figure
 
 from .. import performance as perf
 from ..core.errors import ValidationError
+from ..quantile import MISSING_LABEL
 from . import theme
 
 __all__ = [
@@ -32,25 +35,35 @@ __all__ = [
     "plot_transition_matrix",
 ]
 
+_PALETTES = ("ordinal", "categorical")
+
 
 def plot_quantile_returns(
     returns: pd.DataFrame,
     *,
     annualize: bool = True,
     periods_per_year: float | None = None,
+    palette: str = "ordinal",
+    missing_label: str = MISSING_LABEL,
     title: str | None = None,
     ax=None,
 ) -> Figure:
-    """分位別の平均リターンを棒で並べる。
+    """分位（またはクラス）別の平均リターンを棒で並べる。
 
     単調に増えて（減って）いれば、シグナルが分位を跨いで効いている。
 
     Parameters
     ----------
     returns :
-        :func:`namportfolio.quantile.quantile_returns` の出力。
+        :func:`namportfolio.quantile.quantile_returns` または
+        :func:`namportfolio.quantile.class_returns` の出力。
     annualize :
         ``True`` なら年率リターン、``False`` なら期間平均。
+    palette :
+        ``"ordinal"`` は順序（分位・格付け）、``"categorical"`` は順序の無い
+        クラス（業種など）。
+    missing_label :
+        欠損クラスの列名。この列だけ中立のグレーで描く。
     """
     _require_quantile_frame(returns)
     if annualize:
@@ -62,7 +75,7 @@ def plot_quantile_returns(
 
     with theme.styled():
         fig, ax = theme.new_axes(ax)
-        colors = theme.ordinal_colors(len(values))
+        colors = _series_colors(values.index, palette=palette, missing_label=missing_label)
         positions = np.arange(len(values))
         ax.bar(positions, values.to_numpy(), width=0.68, color=colors)
         ax.set_xticks(positions, list(values.index))
@@ -81,35 +94,42 @@ def plot_quantile_cumulative(
     returns: pd.DataFrame,
     *,
     long_short: bool = True,
+    palette: str = "ordinal",
+    missing_label: str = MISSING_LABEL,
     title: str | None = "Cumulative return by quantile",
     ax=None,
 ) -> Figure:
-    """分位別の累積リターン。
+    """分位（またはクラス）別の累積リターン。
 
     Parameters
     ----------
     long_short :
         ``True`` なら「最上位 − 最下位」のスプレッドも重ねる。分位とは別の
-        ものなので、順序色ではなく識別色（アクセント）で描く。
+        ものなので、順序色ではなく識別色（アクセント）で描く。**欠損クラスは
+        順序を持たないので端の選択から除外する。**
+    palette :
+        ``"ordinal"`` は順序（分位・格付け）、``"categorical"`` は順序の無いクラス。
     """
     _require_quantile_frame(returns)
     with theme.styled():
         fig, ax = theme.new_axes(ax)
-        colors = theme.ordinal_colors(returns.shape[1])
+        colors = _series_colors(returns.columns, palette=palette, missing_label=missing_label)
         cumulative = perf.cumulative_returns(returns)
 
         for (name, series), color in zip(cumulative.items(), colors, strict=True):
             ax.plot(series.index, series.to_numpy(), color=color, label=str(name))
 
-        if long_short and returns.shape[1] >= 2:
-            spread = returns[returns.columns[-1]] - returns[returns.columns[0]]
+        ordered = _ordered_labels(returns.columns, missing_label)
+        if long_short and len(ordered) >= 2:
+            top, bottom = ordered[-1], ordered[0]
+            spread = returns[top] - returns[bottom]
             accent = theme.categorical_colors(2)[1]
             ax.plot(
                 spread.index,
                 perf.cumulative_returns(spread).to_numpy(),
                 color=accent,
                 linewidth=2.2,
-                label=str(spread.name or f"{returns.columns[-1]}-{returns.columns[0]}"),
+                label=f"{top}-{bottom}",
             )
 
         theme.percent_axis(ax)
@@ -258,6 +278,8 @@ def plot_factor_decay(
 def plot_quantile_turnover(
     turnover: pd.DataFrame,
     *,
+    palette: str = "ordinal",
+    missing_label: str = MISSING_LABEL,
     title: str | None = "Quantile turnover",
     ax=None,
 ) -> Figure:
@@ -265,7 +287,7 @@ def plot_quantile_turnover(
     _require_quantile_frame(turnover)
     with theme.styled():
         fig, ax = theme.new_axes(ax)
-        colors = theme.ordinal_colors(turnover.shape[1])
+        colors = _series_colors(turnover.columns, palette=palette, missing_label=missing_label)
         for (name, series), color in zip(turnover.items(), colors, strict=True):
             ax.plot(series.index, series.to_numpy(), color=color, label=str(name))
         theme.percent_axis(ax)
@@ -310,3 +332,35 @@ def _require_quantile_frame(frame: pd.DataFrame) -> None:
         )
     if frame.empty or frame.shape[1] == 0:
         raise ValidationError("分位の列がありません。")
+
+
+def _series_colors(
+    columns: Sequence,
+    *,
+    palette: str = "ordinal",
+    missing_label: str = MISSING_LABEL,
+) -> list[str]:
+    """列ごとの色。**欠損クラスだけは中立のグレー**にする。
+
+    欠損クラスは分位の順序の一部ではないので、濃淡の系列に混ぜると
+    「一番大きい分位」に見えてしまう。
+
+    Parameters
+    ----------
+    palette :
+        ``"ordinal"``（順序＝分位や格付け）または ``"categorical"``（順序の無い
+        クラス＝業種など）。
+    """
+    if palette not in _PALETTES:
+        raise ValidationError(f"palette は {list(_PALETTES)} のいずれかです: {palette!r}")
+
+    ordered = [column for column in columns if column != missing_label]
+    picker = theme.ordinal_colors if palette == "ordinal" else theme.categorical_colors
+    mapping = dict(zip(ordered, picker(len(ordered)), strict=True))
+    mapping[missing_label] = theme.palette()["muted"]
+    return [mapping[column] for column in columns]
+
+
+def _ordered_labels(columns: Sequence, missing_label: str) -> list:
+    """欠損クラスを除いた列。ロング・ショートの端を選ぶのに使う。"""
+    return [column for column in columns if column != missing_label]

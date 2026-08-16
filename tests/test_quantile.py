@@ -110,6 +110,126 @@ class TestQuantileReturns:
         assert result.index.is_monotonic_increasing
 
 
+class TestClassReturns:
+    @pytest.fixture
+    def rated(self, panel):
+        """factor 0〜2 を C、3〜6 を B、7〜9 を A とする格付け列を足す。"""
+        return panel.assign(
+            rating=np.select([panel["factor"] < 3, panel["factor"] < 7], ["C", "B"], default="A")
+        )
+
+    def test_groups_by_class_values(self, rated):
+        result = q.class_returns(rated, classes="rating", forward_return="fwd_ret")
+        assert list(result.columns) == ["A", "B", "C"], "既定は値のソート順"
+        assert result["C"].iloc[0] == pytest.approx(0.01)  # (0 + 1 + 2) / 3 * 0.01
+        assert result["A"].iloc[0] == pytest.approx(0.08)  # (7 + 8 + 9) / 3 * 0.01
+
+    def test_explicit_order(self, rated):
+        result = q.class_returns(
+            rated, classes="rating", forward_return="fwd_ret", class_order=["C", "B", "A"]
+        )
+        assert list(result.columns) == ["C", "B", "A"]
+
+    def test_order_can_filter(self, rated):
+        result = q.class_returns(
+            rated, classes="rating", forward_return="fwd_ret", class_order=["A", "C"]
+        )
+        assert list(result.columns) == ["A", "C"], "指定した列だけ返る"
+
+    def test_weighted(self, rated):
+        weighted = rated.copy()
+        weighted.loc[weighted["factor"] == 2.0, "mktcap"] = 8.0
+        result = q.class_returns(
+            weighted, classes="rating", forward_return="fwd_ret", weight="mktcap"
+        )
+        assert result["C"].iloc[0] == pytest.approx((0.0 * 1 + 0.01 * 1 + 0.02 * 8) / 10)
+
+    def test_missing_class_excluded_by_default(self, rated):
+        holed = rated.copy()
+        holed.loc[holed["factor"] < 3, "rating"] = None
+        result = q.class_returns(holed, classes="rating", forward_return="fwd_ret")
+        assert list(result.columns) == ["A", "B"]
+
+    def test_missing_class_included(self, rated):
+        holed = rated.copy()
+        holed.loc[holed["factor"] < 3, "rating"] = None
+        result = q.class_returns(
+            holed, classes="rating", forward_return="fwd_ret", include_missing=True
+        )
+        assert list(result.columns) == ["A", "B", "NA"], "欠損クラスは常に末尾"
+        assert result["NA"].iloc[0] == pytest.approx(0.01)
+
+    def test_custom_missing_label(self, rated):
+        holed = rated.copy()
+        holed.loc[holed["factor"] < 3, "rating"] = None
+        result = q.class_returns(
+            holed,
+            classes="rating",
+            forward_return="fwd_ret",
+            include_missing=True,
+            missing_label="未格付",
+        )
+        assert list(result.columns) == ["A", "B", "未格付"]
+
+    def test_missing_column(self, rated):
+        with pytest.raises(ValidationError, match="必須カラム"):
+            q.class_returns(rated, classes="nonexistent", forward_return="fwd_ret")
+
+
+class TestMissingQuantileClass:
+    @pytest.fixture
+    def holed(self, panel):
+        """factor 0 と 1 の銘柄だけ値が欠損している。"""
+        holed = panel.copy()
+        holed.loc[holed["bid"].isin([BIDS[0], BIDS[1]]), "factor"] = np.nan
+        return holed
+
+    def test_assign_marks_missing_with_zero(self, holed):
+        assigned = q.assign_quantiles(holed, factor="factor", missing_class=True)
+        first = assigned[holed["date"] == DATES[0]]
+        assert list(first)[:2] == [0.0, 0.0], "欠損は 0（分位は 1 から）"
+        assert first.iloc[2:].min() >= 1.0
+
+    def test_assign_leaves_missing_as_nan_by_default(self, holed):
+        assigned = q.assign_quantiles(holed, factor="factor")
+        assert assigned[holed["date"] == DATES[0]].iloc[:2].isna().all()
+
+    def test_thin_day_is_not_a_missing_class(self, panel):
+        """銘柄数不足で分位が作れない日は、欠損クラスにも入れない。"""
+        thin = panel[panel["bid"].isin(BIDS[:3])]
+        assigned = q.assign_quantiles(thin, factor="factor", missing_class=True)
+        assert assigned.isna().all(), "値はあるが分位が作れない → NaN のまま"
+
+    def test_quantile_returns_adds_na_column(self, holed):
+        result = q.quantile_returns(
+            holed, factor="factor", forward_return="fwd_ret", include_missing=True
+        )
+        assert list(result.columns) == ["Q1", "Q2", "Q3", "Q4", "Q5", "NA"]
+        assert result["NA"].iloc[0] == pytest.approx(0.005)  # (0.00 + 0.01) / 2
+
+    def test_quantile_returns_excludes_missing_by_default(self, holed):
+        result = q.quantile_returns(holed, factor="factor", forward_return="fwd_ret")
+        assert list(result.columns) == ["Q1", "Q2", "Q3", "Q4", "Q5"]
+
+    def test_missing_does_not_shift_quantiles(self, holed):
+        """欠損を別クラスにしても、値がある銘柄の分位割当は変わらない。"""
+        with_na = q.quantile_returns(
+            holed, factor="factor", forward_return="fwd_ret", include_missing=True
+        )
+        without = q.quantile_returns(holed, factor="factor", forward_return="fwd_ret")
+        for label in ["Q1", "Q2", "Q3", "Q4", "Q5"]:
+            assert with_na[label].to_numpy() == pytest.approx(without[label].to_numpy())
+
+    def test_turnover_includes_missing(self, holed):
+        turnover = q.quantile_turnover(holed, factor="factor", include_missing=True)
+        assert list(turnover.columns) == ["Q1", "Q2", "Q3", "Q4", "Q5", "NA"]
+
+    def test_transition_includes_missing(self, holed):
+        matrix = q.quantile_transition_matrix(holed, factor="factor", include_missing=True)
+        assert list(matrix.index) == ["Q1", "Q2", "Q3", "Q4", "Q5", "NA"]
+        assert matrix.loc["NA", "NA"] == pytest.approx(1.0), "欠損のままの銘柄は動かない"
+
+
 class TestSummaries:
     @pytest.fixture
     def returns(self, panel):

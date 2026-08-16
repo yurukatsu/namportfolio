@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 import pytest
 from matplotlib import pyplot as plt
+from matplotlib.colors import to_rgba
 from matplotlib.figure import Figure
 
 from namportfolio import quantile, signals, viz
@@ -232,6 +233,58 @@ class TestQuantileCharts:
         matrix = quantile.quantile_transition_matrix(panel, factor="factor")
         fig = viz.plot_transition_matrix(matrix)
         assert len(fig.axes[0].texts) == 25
+
+
+class TestClassAndMissingCharts:
+    @pytest.fixture
+    def panel(self):
+        dates = pd.date_range("2022-01-31", periods=24, freq=MONTH_END)
+        rng = np.random.default_rng(9)
+        rows = [
+            {
+                "date": date,
+                "bid": f"JP{i:04d}",
+                "factor": np.nan if i < 4 else float(i) + rng.normal(0, 2),
+                "fwd_ret": i * 0.002 + rng.normal(0, 0.03),
+                "rating": "A" if i < 10 else "B" if i < 20 else "C",
+            }
+            for date in dates
+            for i in range(30)
+        ]
+        return pd.DataFrame(rows)
+
+    @pytest.fixture
+    def with_missing(self, panel):
+        return quantile.quantile_returns(
+            panel, factor="factor", forward_return="fwd_ret", include_missing=True
+        )
+
+    def test_missing_class_is_grey(self, with_missing):
+        """欠損クラスだけ中立色。順序の濃淡に混ぜない。"""
+        fig = viz.plot_quantile_returns(with_missing)
+        colors = [bar.get_facecolor() for bar in fig.axes[0].containers[0]]
+        muted = to_rgba(theme.palette()["muted"])
+        assert colors[-1] == muted
+        assert muted not in colors[:-1]
+
+    def test_long_short_ignores_missing_class(self, with_missing):
+        fig = viz.plot_quantile_cumulative(with_missing)
+        labels = fig.axes[0].get_legend_handles_labels()[1]
+        assert "Q5-Q1" in labels, "NA を端に選ばない"
+
+    def test_class_returns_with_categorical_palette(self, panel):
+        rets = quantile.class_returns(panel, classes="rating", forward_return="fwd_ret")
+        fig = viz.plot_quantile_returns(rets, palette="categorical")
+        colors = [bar.get_facecolor() for bar in fig.axes[0].containers[0]]
+        assert colors[0] == to_rgba(theme.categorical_colors(1)[0])
+
+    def test_unknown_palette(self, with_missing):
+        with pytest.raises(ValidationError, match="palette は"):
+            viz.plot_quantile_returns(with_missing, palette="rainbow")
+
+    def test_turnover_with_missing_class(self, panel):
+        turnover = quantile.quantile_turnover(panel, factor="factor", include_missing=True)
+        assert n_series(viz.plot_quantile_turnover(turnover)) == 6
 
 
 class TestSignalCharts:

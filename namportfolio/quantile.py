@@ -19,6 +19,7 @@
 
 from __future__ import annotations
 
+import contextlib
 from collections.abc import Sequence
 
 import numpy as np
@@ -34,6 +35,7 @@ from .stats import newey_west_tstat, t_statistic
 __all__ = [
     "assign_quantiles",
     "quantile_returns",
+    "class_returns",
     "quantile_summary",
     "long_short_returns",
     "information_coefficient",
@@ -42,9 +44,17 @@ __all__ = [
     "factor_autocorrelation",
     "quantile_turnover",
     "quantile_transition_matrix",
+    "quantile_labels",
+    "MISSING_LABEL",
 ]
 
 _CORR_METHODS = ("spearman", "pearson")
+
+#: 欠損クラスの既定ラベル。分位（``Q1`` …）とは別枠として扱う。
+MISSING_LABEL = "NA"
+
+#: 欠損クラスに割り当てる内部的な分位番号（分位は 1 から始まるので 0 を使う）。
+_MISSING_CODE = 0.0
 
 
 def assign_quantiles(
@@ -55,6 +65,7 @@ def assign_quantiles(
     group: str | None = None,
     ascending: bool = True,
     min_assets: int | None = None,
+    missing_class: bool = False,
     date_col: str | None = None,
     id_col: str | None = None,
 ) -> pd.Series:
@@ -73,11 +84,15 @@ def assign_quantiles(
     min_assets :
         その日（グループ）の有効銘柄数がこれ未満なら分位を付けない。
         ``None`` なら ``n_quantiles`` と同じ。
+    missing_class :
+        ``True`` なら**ファクター値が欠損している銘柄に 0 を割り当てる**
+        （欠損クラス）。分位が作れなかった日（銘柄数不足）とは区別され、
+        そちらは ``NaN`` のまま。
 
     Returns
     -------
     pd.Series
-        ``data`` と同じ index を持つ float の Series（欠損は ``NaN``）。
+        ``data`` と同じ index を持つ float の Series。
         ``data["quantile"] = assign_quantiles(...)`` のように使える。
     """
     if n_quantiles < 2:
@@ -95,8 +110,13 @@ def assign_quantiles(
     # rank(method="first") なら同値も順に振り分けられて分位のサイズが揃う。
     ranks = grouped.rank(method="first", ascending=ascending, pct=True)
     counts = grouped.transform("count")
-    quantiles = np.ceil(ranks * n_quantiles).clip(1, n_quantiles)
-    return quantiles.where(counts >= min_assets).rename("quantile")
+    enough = counts >= min_assets
+    quantiles = np.ceil(ranks * n_quantiles).clip(1, n_quantiles).where(enough)
+
+    if missing_class:
+        # 「値が無い」と「分位を作れなかった」を区別する。前者だけ欠損クラスへ。
+        quantiles = quantiles.mask(data[factor].isna() & enough, _MISSING_CODE)
+    return quantiles.rename("quantile")
 
 
 def quantile_returns(
@@ -109,6 +129,8 @@ def quantile_returns(
     weight: str | None = None,
     ascending: bool = True,
     min_assets: int | None = None,
+    include_missing: bool = False,
+    missing_label: str = MISSING_LABEL,
     date_col: str | None = None,
     id_col: str | None = None,
 ) -> pd.DataFrame:
@@ -120,12 +142,18 @@ def quantile_returns(
         フォワードリターンのカラム名。
     weight :
         加重平均に使うカラム名（時価総額など）。``None`` なら等ウェイト。
+    include_missing :
+        ``True`` なら**ファクター値が欠損している銘柄をまとめた列**を追加する。
+        「値が付いていない銘柄群がどう動いたか」は、欠損がランダムでないとき
+        （新規上場、決算未発表、カバレッジ外）に効いてくる。
+    missing_label :
+        欠損クラスの列名。
 
     Returns
     -------
     pd.DataFrame
-        ``index=date``、``columns=["Q1", ..., "Qn"]``。ある日にその分位の銘柄が
-        1 つも無ければ ``NaN``。
+        ``index=date``、``columns=["Q1", ..., "Qn"]``（``include_missing`` なら
+        末尾に欠損クラス）。ある日にその分位の銘柄が 1 つも無ければ ``NaN``。
     """
     date_col, id_col = resolve_columns(date_col, id_col)
     needed = [date_col, factor, forward_return] + ([weight] if weight else [])
@@ -138,32 +166,80 @@ def quantile_returns(
         group=group,
         ascending=ascending,
         min_assets=min_assets,
+        missing_class=include_missing,
         date_col=date_col,
         id_col=id_col,
     )
-    frame = pd.DataFrame(
-        {
-            "_date": pd.to_datetime(data[date_col]),
-            "_quantile": quantiles,
-            "_ret": data[forward_return],
-        }
+    # na_action="ignore" が無いと NaN（分位を作れなかった行）にも変換が走る
+    labels = quantiles.map(lambda q: _label(q, missing_label), na_action="ignore")
+    order = quantile_labels(
+        n_quantiles, include_missing=include_missing, missing_label=missing_label
     )
-    if weight is not None:
-        frame["_weight"] = data[weight]
-    frame = frame.dropna()
+    return _returns_by_label(
+        data,
+        labels=labels,
+        forward_return=forward_return,
+        weight=weight,
+        date_col=date_col,
+        order=order,
+    )
 
-    if weight is None:
-        grouped = frame.groupby(["_date", "_quantile"])["_ret"].mean()
-    else:
-        frame["_weighted"] = frame["_ret"] * frame["_weight"]
-        sums = frame.groupby(["_date", "_quantile"])[["_weighted", "_weight"]].sum()
-        grouped = sums["_weighted"] / sums["_weight"].replace(0, np.nan)
 
-    wide = grouped.unstack("_quantile")
-    wide.columns = [_label(q) for q in wide.columns]
-    wide.index.name = date_col
-    # その分位が 1 日も現れなかった場合に列が欠けるので、全分位を揃える
-    return wide.reindex(columns=quantile_labels(n_quantiles)).sort_index()
+def class_returns(
+    data: pd.DataFrame,
+    *,
+    classes: str,
+    forward_return: str,
+    weight: str | None = None,
+    include_missing: bool = False,
+    missing_label: str = MISSING_LABEL,
+    class_order: Sequence | None = None,
+    date_col: str | None = None,
+    id_col: str | None = None,
+) -> pd.DataFrame:
+    """**既存のクラス列**でポートフォリオを組み、期間リターンを返す。
+
+    分位を計算せず、データに入っているラベル（格付け、スタイル区分、内製の
+    スコア区分など）をそのままポートの分け方として使う。
+
+        rets = npf.quantile.class_returns(df, classes="rating", forward_return="ret_1m")
+
+    Parameters
+    ----------
+    classes :
+        ポートを分けるラベルのカラム名。
+    include_missing :
+        ``True`` ならクラスが欠損している銘柄を ``missing_label`` の列にまとめる。
+    class_order :
+        列の並び順。``None`` なら値をソートした順（欠損クラスは常に末尾）。
+        順序に意味があるクラス（``S``/``A``/``B``…）では明示するとよい。
+
+    Returns
+    -------
+    pd.DataFrame
+        ``index=date``、``columns`` はクラス値。
+
+    See Also
+    --------
+    quantile_returns : ファクター値から分位を作ってポートを組む場合。
+    """
+    date_col, id_col = resolve_columns(date_col, id_col)
+    needed = [date_col, classes, forward_return] + ([weight] if weight else [])
+    require_columns(data, needed, context="class_returns")
+
+    labels = data[classes].astype(object)
+    if include_missing:
+        labels = labels.where(labels.notna(), missing_label)
+
+    order = _class_order(labels, class_order, include_missing, missing_label)
+    return _returns_by_label(
+        data,
+        labels=labels,
+        forward_return=forward_return,
+        weight=weight,
+        date_col=date_col,
+        order=order,
+    )
 
 
 def quantile_summary(
@@ -208,13 +284,16 @@ def long_short_returns(
     *,
     long: str | None = None,
     short: str | None = None,
+    missing_label: str = MISSING_LABEL,
 ) -> pd.Series:
     """ロング・ショートのスプレッド。
 
     既定は「最上位分位 − 最下位分位」。``ascending=False`` で分位を作った場合や
     特定の分位を指定したい場合は ``long`` / ``short`` にラベルを渡す。
+
+    欠損クラスは順序を持たないので、既定の端の選択からは除外する。
     """
-    labels = list(returns.columns)
+    labels = [column for column in returns.columns if column != missing_label]
     if not labels:
         raise ValidationError("分位リターンが空です。")
     long = long or labels[-1]
@@ -395,6 +474,8 @@ def quantile_turnover(
     group: str | None = None,
     ascending: bool = True,
     min_assets: int | None = None,
+    include_missing: bool = False,
+    missing_label: str = MISSING_LABEL,
     date_col: str | None = None,
     id_col: str | None = None,
 ) -> pd.DataFrame:
@@ -402,6 +483,12 @@ def quantile_turnover(
 
     「前期その分位にいた銘柄のうち、今期は抜けた割合」を名前ベースで数える
     （ウェイトの増減は見ない）。
+
+    Parameters
+    ----------
+    include_missing :
+        ``True`` なら欠損クラスの入れ替わりも列に加える。値が付いたり消えたり
+        する銘柄がどれだけ動いているかを見る。
 
     Returns
     -------
@@ -415,19 +502,24 @@ def quantile_turnover(
         group=group,
         ascending=ascending,
         min_assets=min_assets,
+        missing_class=include_missing,
         date_col=date_col,
         id_col=id_col,
     )
 
+    codes = list(range(1, n_quantiles + 1))
+    if include_missing:
+        codes.append(_MISSING_CODE)
+
     result = {}
-    for q in range(1, n_quantiles + 1):
-        current = membership == q
+    for code in codes:
+        current = membership == code
         previous = current.shift(1)
         n_previous = previous.sum(axis=1)
         left = (previous & ~current).sum(axis=1)
         turnover = left / n_previous.replace(0, np.nan)
         turnover.iloc[0] = np.nan  # 前期が無いので定義できない
-        result[_label(q)] = turnover
+        result[_label(code, missing_label)] = turnover
     return pd.DataFrame(result)
 
 
@@ -439,10 +531,18 @@ def quantile_transition_matrix(
     group: str | None = None,
     ascending: bool = True,
     min_assets: int | None = None,
+    include_missing: bool = False,
+    missing_label: str = MISSING_LABEL,
     date_col: str | None = None,
     id_col: str | None = None,
 ) -> pd.DataFrame:
     """分位間の遷移確率。
+
+    Parameters
+    ----------
+    include_missing :
+        ``True`` なら欠損クラスも行・列に加える。「値が付いた銘柄がどの分位に
+        入るか」「どの分位から値が消えるか」が見える。
 
     Returns
     -------
@@ -457,6 +557,7 @@ def quantile_transition_matrix(
         group=group,
         ascending=ascending,
         min_assets=min_assets,
+        missing_class=include_missing,
         date_col=date_col,
         id_col=id_col,
     )
@@ -470,15 +571,25 @@ def quantile_transition_matrix(
         raise ValidationError("遷移を数えられる期間がありません（2 期間以上必要です）。")
 
     matrix = pd.crosstab(pairs["from"], pairs["to"], normalize="index")
-    labels = quantile_labels(n_quantiles)
-    matrix.index = [_label(q) for q in matrix.index]
-    matrix.columns = [_label(q) for q in matrix.columns]
+    labels = quantile_labels(
+        n_quantiles, include_missing=include_missing, missing_label=missing_label
+    )
+    matrix.index = [_label(q, missing_label) for q in matrix.index]
+    matrix.columns = [_label(q, missing_label) for q in matrix.columns]
     return matrix.reindex(index=labels, columns=labels)
 
 
-def quantile_labels(n_quantiles: int) -> list[str]:
-    """``["Q1", ..., "Qn"]``。"""
-    return [f"Q{i}" for i in range(1, n_quantiles + 1)]
+def quantile_labels(
+    n_quantiles: int,
+    *,
+    include_missing: bool = False,
+    missing_label: str = MISSING_LABEL,
+) -> list[str]:
+    """``["Q1", ..., "Qn"]``（``include_missing`` なら末尾に欠損クラス）。"""
+    labels = [f"Q{i}" for i in range(1, n_quantiles + 1)]
+    if include_missing:
+        labels.append(missing_label)
+    return labels
 
 
 # --------------------------------------------------------------------------
@@ -486,8 +597,68 @@ def quantile_labels(n_quantiles: int) -> list[str]:
 # --------------------------------------------------------------------------
 
 
-def _label(quantile: float) -> str:
+def _label(quantile: float, missing_label: str = MISSING_LABEL) -> str:
+    if quantile == _MISSING_CODE:
+        return missing_label
     return f"Q{int(quantile)}"
+
+
+def _returns_by_label(
+    data: pd.DataFrame,
+    *,
+    labels: pd.Series,
+    forward_return: str,
+    weight: str | None,
+    date_col: str,
+    order: Sequence,
+) -> pd.DataFrame:
+    """ラベルごとに期間リターンを集計して wide にする。
+
+    分位でもクラス列でも処理は同じなので、ラベルの作り方だけを外に出している。
+    """
+    frame = pd.DataFrame(
+        {
+            "_date": pd.to_datetime(data[date_col]),
+            "_label": labels,
+            "_ret": data[forward_return],
+        }
+    )
+    subset = ["_date", "_label", "_ret"]
+    if weight is not None:
+        frame["_weight"] = data[weight]
+        subset.append("_weight")
+    frame = frame.dropna(subset=subset)
+
+    if weight is None:
+        grouped = frame.groupby(["_date", "_label"], observed=True)["_ret"].mean()
+    else:
+        frame["_weighted"] = frame["_ret"] * frame["_weight"]
+        sums = frame.groupby(["_date", "_label"], observed=True)[["_weighted", "_weight"]].sum()
+        grouped = sums["_weighted"] / sums["_weight"].replace(0, np.nan)
+
+    wide = grouped.unstack("_label")
+    wide.index.name = date_col
+    # 1 日も現れなかったクラスは列が欠けるので、想定した並びに揃える
+    return wide.reindex(columns=list(order)).sort_index()
+
+
+def _class_order(
+    labels: pd.Series,
+    class_order: Sequence | None,
+    include_missing: bool,
+    missing_label: str,
+) -> list:
+    """クラス列の並び順を決める。欠損クラスは常に末尾。"""
+    if class_order is not None:
+        return list(class_order)
+
+    present = list(pd.unique(labels.dropna()))
+    others = [value for value in present if value != missing_label]
+    with contextlib.suppress(TypeError):  # 型が混在していたら出現順のまま
+        others = sorted(others)
+    if include_missing and missing_label in present:
+        others.append(missing_label)
+    return others
 
 
 def _quantile_panel(data: pd.DataFrame, *, factor: str, date_col, id_col, **kwargs) -> pd.DataFrame:
