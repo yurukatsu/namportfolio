@@ -17,6 +17,12 @@ except ImportError as exc:  # pragma: no cover
     ) from exc
 
 from . import theme
+from .attribution import (
+    plot_cumulative_effects,
+    plot_effect_heatmap,
+    plot_effects_by_segment,
+    plot_waterfall,
+)
 from .holdings import (
     plot_allocation,
     plot_characteristics,
@@ -76,4 +82,9 @@ __all__ = [
     "plot_contribution",
     "plot_characteristics",
     "plot_turnover",
+    # F5 Brinson 帰属
+    "plot_waterfall",
+    "plot_effects_by_segment",
+    "plot_cumulative_effects",
+    "plot_effect_heatmap",
 ]

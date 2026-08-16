@@ -24,7 +24,7 @@ uv run ruff check .      # lint
 | `viz/` | `theme` / `performance` / `quantile` / `signals` / `holdings` | ✅ |
 | `signals.py` | F1 シグナル前処理・診断（ファクター曝露は F6 待ち） | ⚠️ 部分 |
 | `holdings.py` | F3 保有ベース分析（構造・特性・寄与度・売買） | ✅ |
-| `attribution.py` | F5 Brinson 帰属 | 未着手 |
+| `attribution.py` | F5 Brinson 帰属（多階層は未実装） | ✅ |
 | `risk.py` | F6 Barra リスク分解 / F7 妥当性検証 | 未着手 |
 
 全部作ってから使うのではなく、**実際に使うものから作る**。

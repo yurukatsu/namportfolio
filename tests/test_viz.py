@@ -5,7 +5,7 @@ from matplotlib import pyplot as plt
 from matplotlib.colors import to_rgba
 from matplotlib.figure import Figure
 
-from namportfolio import holdings, quantile, signals, viz
+from namportfolio import attribution, holdings, quantile, signals, viz
 from namportfolio.core.errors import ValidationError
 from namportfolio.performance import MONTH_END
 from namportfolio.viz import theme
@@ -407,6 +407,72 @@ class TestHoldingCharts:
     def test_turnover_rejects_frame(self, panel):
         with pytest.raises(ValidationError, match="Series のみ"):
             viz.plot_turnover(holdings.turnover(panel).to_frame())
+
+
+class TestAttributionCharts:
+    @pytest.fixture
+    def panel(self):
+        dates = pd.date_range("2023-01-31", periods=12, freq=MONTH_END)
+        rng = np.random.default_rng(17)
+        rows = []
+        for date in dates:
+            raw = rng.random(24) + 0.2
+            weights = raw / raw.sum()
+            for i, w in enumerate(weights):
+                rows.append(
+                    {
+                        "date": date,
+                        "bid": f"JP{i:04d}",
+                        "weight": w,
+                        "bench_weight": 1 / 24,
+                        "ret": rng.normal(0.005, 0.05),
+                        "sector": ["Tech", "Financials", "Health"][i % 3],
+                    }
+                )
+        return pd.DataFrame(rows)
+
+    @pytest.fixture
+    def summary(self, panel):
+        return attribution.brinson_summary(panel, segment="sector", asset_return="ret")
+
+    @pytest.fixture
+    def effects(self, panel):
+        return attribution.brinson(panel, segment="sector", asset_return="ret")
+
+    def test_waterfall_bars(self, summary):
+        fig = viz.plot_waterfall(summary)
+        # allocation / selection / interaction + Total
+        assert len(fig.axes[0].containers[0]) == 3
+        assert len(fig.axes[0].containers[1]) == 1
+
+    def test_waterfall_requires_total_row(self, summary):
+        with pytest.raises(ValidationError, match="合計行"):
+            viz.plot_waterfall(summary.drop(index="Total"))
+
+    def test_effects_by_segment(self, summary):
+        fig = viz.plot_effects_by_segment(summary)
+        assert len(fig.axes[0].containers) == 3, "効果ごとに 1 グループ"
+        assert len(fig.axes[0].containers[0]) == 3, "セクター 3 つ"
+
+    def test_effects_by_segment_can_include_total(self, summary):
+        fig = viz.plot_effects_by_segment(summary, include_total_column=True)
+        assert len(fig.axes[0].containers) == 4
+
+    def test_cumulative_effects(self, effects):
+        fig = viz.plot_cumulative_effects(effects)
+        assert n_series(fig) == 4, "3 効果 + 合計"
+
+    def test_cumulative_requires_multiindex(self, effects):
+        with pytest.raises(ValidationError, match="MultiIndex"):
+            viz.plot_cumulative_effects(effects.groupby(level=0).sum())
+
+    def test_effect_heatmap(self, effects):
+        fig = viz.plot_effect_heatmap(effects, effect="selection")
+        assert len(fig.axes) == 2
+
+    def test_effect_heatmap_unknown_effect(self, effects):
+        with pytest.raises(ValidationError, match="列がありません"):
+            viz.plot_effect_heatmap(effects, effect="timing")
 
 
 class TestTheme:

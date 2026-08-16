@@ -2,7 +2,7 @@
 
 import importlib
 
-from . import holdings, performance, quantile, signals, stats
+from . import attribution, holdings, performance, quantile, signals, stats
 from .core import (
     NamPortfolioError,
     ValidationError,
@@ -35,6 +35,7 @@ def __getattr__(name: str):
 __all__ = [
     "__version__",
     # 機能モジュール（npf.performance.sharpe_ratio(...) のように使う）
+    "attribution",
     "holdings",
     "performance",
     "quantile",

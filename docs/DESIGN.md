@@ -120,11 +120,15 @@
 | BHB | allocation = $(w_p - w_b) r_b$ / selection = $w_b (r_p - r_b)$ / interaction |
 | BF | allocation = $(w_p - w_b)(r_b^{(i)} - r_b)$（ベンチ超過基準）、selection は BHB と同じ |
 | 項数 | 3項（alloc / sel / interaction）または 2項（interaction を selection に統合） |
-| 多期間リンキング | Carino / Menchero / GRAP / Frongello / 単純加算 |
-| 多階層 | セクター → 業種など（オプション） |
+| 多期間リンキング | Carino / GRAP / Frongello / 単純加算（**Menchero は未実装**） |
+| 多階層 | セクター → 業種など（**未実装**。必要になってから） |
 
 **入力は 2 経路。** 銘柄レベル（ウェイト・リターン・銘柄→セグメント対応表）を集計する経路と、
 セグメント集計済みを直接受け取る経路。前者を後者に変換して合流させる。
+
+**単期間の効果は足し算で閉じる**（総和 = その期間のアクティブリターン）。期間をまたぐと
+複利のぶんずれるので、リンキングを通してから足し上げる。Carino / GRAP / Frongello は
+いずれも総和が幾何アクティブリターンに一致することをテストで確認している。
 
 **図**: ウォーターフォール / セグメント別効果バー / 累積効果の時系列 / セグメント×時点ヒートマップ
 
@@ -326,7 +330,7 @@ namportfolio/
 ├── quantile.py             F2  ✅ 実装済み
 ├── signals.py              F1  ⚠️ 前処理・診断は実装済み（ファクター曝露は F6 待ち）
 ├── holdings.py             F3  ✅ 実装済み
-├── attribution.py          F5
+├── attribution.py          F5  ✅ 実装済み（多階層を除く）
 ├── risk.py                 F6 / F7
 ├── stats.py                F8  ⚠️ 有意性検定のみ実装（他は未着手）
 └── viz/
@@ -335,6 +339,7 @@ namportfolio/
     ├── quantile.py         F2 の図  ✅ 実装済み
     ├── signals.py          F1 の図  ✅ 実装済み
     ├── holdings.py         F3 の図  ✅ 実装済み
+    ├── attribution.py      F5 の図  ✅ 実装済み
     └── ...                 機能ごとに 1 ファイル
 ```
 
@@ -351,7 +356,8 @@ namportfolio/
 | 5 | `quantile`（F2）+ `viz.quantile` | ✅ 完了（842 行、テスト 44 件） |
 | 6 | `signals`（F1、ファクター曝露を除く）+ `viz.signals` | ✅ 完了（614 行、テスト 38 件） |
 | 7 | `holdings`（F3）+ `viz.holdings` | ✅ 完了（668 行、テスト 35 件） |
-| 8 以降 | `attribution` / `risk` / `signals.exposure` / `stats` 残り | **実際に使う順** |
+| 8 | `attribution`（F5、多階層を除く）+ `viz.attribution` | ✅ 完了（594 行、テスト 30 件） |
+| 9 以降 | `risk` / `signals.exposure` / `stats` 残り / 多階層 Brinson | **実際に使う順** |
 
 全部作ってから使うのではなく、必要になったものから作る。各段階で計算の正しさをテストで担保する
 （設定・検証のテストは書かない）。
