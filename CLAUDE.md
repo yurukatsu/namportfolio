@@ -86,8 +86,10 @@ wide 化で空くセルは埋めない（ユニバース変動で穴が空くの
   （`transform("count")`）か `groupby.rank` を使う。
 - **`DataFrame - Series` は列方向にブロードキャストされる。** 日付方向に引くときは
   `.sub(series, axis=0)` を明示する（一度これでバグを出している）。
-- matplotlib / statsmodels / sklearn は optional 依存。`core` と計算モジュールは
-  **pandas + numpy だけで動く**必要がある（社内の制限環境で使うため）。
+- **順位相関は `rank()` してから Pearson を取る。** pandas の `corr(method="spearman")` は
+  内部で scipy を呼ぶ。結果は同じで、他の相関計算とコードが揃う
+- matplotlib は optional 依存。計算モジュールは **pandas + numpy だけで動く**
+  （scipy は社内環境で利用可。必要なら使ってよいが、現時点では不要）
 - `npf.viz` は遅延 import。matplotlib が無くても `import namportfolio` は成功する。
 
 ## テスト

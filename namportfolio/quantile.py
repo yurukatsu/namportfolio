@@ -945,7 +945,12 @@ def _ic_by_group(
     def _corr(chunk: pd.DataFrame) -> float:
         if len(chunk) < min_assets:
             return np.nan
-        return chunk[factor].corr(chunk[forward_return], method=method)
+        values, returns = chunk[factor], chunk[forward_return]
+        if method == "spearman":
+            # pandas の corr(method="spearman") は scipy を要求する。
+            # 順位に変換してから Pearson を取れば結果は同じで、依存が増えない
+            values, returns = values.rank(), returns.rank()
+        return values.corr(returns)
 
     ic = frame.groupby([date_col, group]).apply(_corr, include_groups=False)
     return ic.unstack(group).sort_index()

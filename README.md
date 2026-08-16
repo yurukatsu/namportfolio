@@ -63,18 +63,38 @@ npf.quantile.quantile_returns(df, ..., date_col="dt")  # 個別に上書き
 
 ## インストール
 
+ビルド用の隔離環境を作れない環境（社内プロキシ配下など）では
+`--no-build-isolation` を付ける。
+
 ```bash
-uv sync --all-extras          # 開発時
-pip install -e '.[viz]'       # 描画込みで利用
+pip install . --no-build-isolation             # 利用のみ
+pip install '.[viz]' --no-build-isolation      # 描画込み
+pip install -e '.[dev]' --no-build-isolation   # 開発（テスト・lint 込み）
 ```
 
-`pandas` / `numpy` があれば全計算が動く。`matplotlib` は描画のみに必要で、
-`npf.viz` に触れるまで import されない（制限環境で本体だけ使える）。
+ビルドバックエンドは **setuptools**。`--no-build-isolation` ではインストール先の環境に
+**既に入っているビルドツール**が使われるため、広く常駐している setuptools を選んでいる。
+
+必須依存は `pandas` と `numpy` だけ。`matplotlib` は描画にのみ必要で、`npf.viz` に
+触れるまで import されない。入っていない環境では次のようになる。
+
+```python
+>>> npf.performance.sharpe_ratio(returns)   # 動く
+0.2099
+>>> npf.viz.plot_cumulative_returns(returns)
+NamPortfolioError: 描画には matplotlib が必要です。
+```
+
+uv が使える環境なら次でも同じ。
+
+```bash
+uv sync --all-extras
+```
 
 ## 開発
 
 ```bash
-uv run pytest -q       # テスト
-uv run ruff format .   # 整形
-uv run ruff check .    # lint
+python -m pytest -q       # テスト
+python -m ruff format .   # 整形
+python -m ruff check .    # lint（ノートブックのセルも検査される）
 ```

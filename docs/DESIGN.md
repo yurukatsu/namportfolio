@@ -317,10 +317,21 @@ npf.plot_quantile_cumulative(q)  # Figure を返す（show() はしない）
 |---|---|---|
 | 必須 | pandas, numpy | 全計算 |
 | optional `viz` | matplotlib | 描画 |
-| optional `stats` | statsmodels, scikit-learn | 検定の補助（Newey-West の厳密版等） |
+| optional `stats` | scipy, statsmodels, scikit-learn | 検定の補助（現時点では未使用） |
+| optional `dev` | matplotlib, pytest, ruff | 開発 |
 
-**全計算を pandas / numpy で完結させる。** Newey-West、ブートストラップ、EWMA 共分散、
-中立化回帰はいずれも自前実装する。社内の制限環境で確実に動くことを優先する。
+**現時点では pandas / numpy だけで全計算が完結している。** Newey-West、中立化回帰は
+自前実装。scipy は社内環境で利用可能なので、正規分布の分位点が要る機能
+（Deflated Sharpe など）を作るときは使ってよい。
+
+一方で、**pandas の `corr(method="spearman")` は内部で scipy を呼ぶ**。順位に変換してから
+Pearson を取れば同じ結果が得られ、コードも他の相関計算と揃うので、そちらに統一している。
+
+**ビルドバックエンドは setuptools。** 社内環境では `pip install . --no-build-isolation` で
+入れるため、ビルドツールは**インストール先の環境に既に入っているもの**でなければならない。
+hatchling は入っていないことがあるが、setuptools はほぼ常駐する。同じ理由で、開発依存は
+`dependency-groups`（PEP 735）ではなく `optional-dependencies` に置く（古い pip は
+`--group` に対応していない）。
 
 ---
 

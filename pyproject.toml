@@ -12,31 +12,29 @@ dependencies = [
 [project.optional-dependencies]
 viz = [
     "matplotlib>=3.7",
-    "plotly>=5.18",
 ]
 stats = [
     "statsmodels>=0.14",
     "scikit-learn>=1.3",
 ]
-all = [
-    "matplotlib>=3.7",
-    "plotly>=5.18",
-    "statsmodels>=0.14",
-    "scikit-learn>=1.3",
-]
-
-[dependency-groups]
+# pip でも入れられるよう、開発依存は dependency-groups（PEP 735）ではなく
+# optional-dependencies に置く。古い pip は --group に対応していない。
 dev = [
+    "matplotlib>=3.7",
     "pytest>=8.0",
     "ruff>=0.6",
 ]
 
+# setuptools を使う。社内環境では `pip install . --no-build-isolation` で
+# 入れるため、ビルドバックエンドは**その環境に既に入っているもの**でなければ
+# ならない。hatchling は入っていないことがあるが、setuptools はほぼ常駐する。
 [build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
 
-[tool.hatch.build.targets.wheel]
-packages = ["namportfolio"]
+[tool.setuptools.packages.find]
+include = ["namportfolio*"]
+namespaces = false
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -1,3 +1,5 @@
+import sys
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -296,6 +298,22 @@ class TestInformationCoefficient:
             q.information_coefficient(
                 panel, factor="factor", forward_return="fwd_ret", method="kendall"
             )
+
+    def test_spearman_does_not_require_scipy(self, panel, monkeypatch):
+        """pandas の corr(method="spearman") は scipy を要求するので使わない。
+
+        本パッケージは pandas + numpy だけで動く必要がある（社内の制限環境）。
+        順位に変換してから Pearson を取ることで依存を避けている。
+        """
+        monkeypatch.setitem(sys.modules, "scipy", None)
+        monkeypatch.setitem(sys.modules, "scipy.stats", None)
+
+        overall = q.information_coefficient(panel, factor="factor", forward_return="fwd_ret")
+        by_group = q.information_coefficient(
+            panel, factor="factor", forward_return="fwd_ret", group="sector", min_assets=3
+        )
+        assert overall.to_numpy() == pytest.approx(1.0)
+        assert by_group.to_numpy().ravel() == pytest.approx(1.0)
 
     def test_summary_keys(self, panel):
         ic = q.information_coefficient(panel, factor="factor", forward_return="fwd_ret")

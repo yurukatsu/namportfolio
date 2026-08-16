@@ -326,9 +326,14 @@ def signal_correlation(
     date_col, _ = resolve_columns(date_col, id_col)
     require_columns(data, [date_col, *factors], context="signal_correlation")
 
-    per_date = data.groupby(pd.to_datetime(data[date_col]), sort=True)[list(factors)].corr(
-        method=method
-    )
+    dates = pd.to_datetime(data[date_col])
+    values = data[list(factors)]
+    if method == "spearman":
+        # pandas の corr(method="spearman") は scipy を要求する。
+        # 横断面を順位に変換してから Pearson を取れば結果は同じ
+        values = values.groupby(dates, sort=True).rank()
+
+    per_date = values.groupby(dates, sort=True).corr()
     mean = per_date.groupby(level=-1, sort=False).mean()
     return mean.reindex(index=list(factors), columns=list(factors))
 

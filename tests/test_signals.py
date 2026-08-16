@@ -1,3 +1,5 @@
+import sys
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -215,3 +217,13 @@ class TestSignalCorrelation:
     def test_rolling_requires_exactly_two(self, multi):
         with pytest.raises(ValidationError, match="2 つ渡して"):
             signals.rolling_signal_correlation(multi, factors=["factor", "same", "noisy"])
+
+    def test_spearman_does_not_require_scipy(self, multi, monkeypatch):
+        """pandas の corr(method="spearman") は scipy を要求するので使わない。"""
+        monkeypatch.setitem(sys.modules, "scipy", None)
+        monkeypatch.setitem(sys.modules, "scipy.stats", None)
+
+        corr = signals.signal_correlation(multi, factors=["factor", "same", "noisy"])
+        assert corr.loc["factor", "same"] == pytest.approx(1.0)
+        rolling = signals.rolling_signal_correlation(multi, factors=["factor", "same"])
+        assert rolling.to_numpy() == pytest.approx(1.0)
