@@ -13,7 +13,7 @@ df["value_z"] = npf.signals.standardize(df, factor="value")
 df["value_n"] = npf.signals.neutralize(df, factor="value_z", by=["sector", "log_mktcap"])
 
 # 予測力を見る
-q  = npf.quantile.quantile_returns(df, factor="value_n", forward_return="fwd_ret_1m")
+q = npf.quantile.quantile_returns(df, factor="value_n", forward_return="fwd_ret_1m")
 ic = npf.quantile.information_coefficient(df, factor="value_n", forward_return="fwd_ret_1m")
 npf.viz.plot_quantile_cumulative(q)
 
@@ -55,7 +55,7 @@ npf.viz.plot_waterfall(summary)
 カラム名が違う場合は既定を変えるか、関数ごとに上書きする。
 
 ```python
-npf.set_columns(date="trade_date", id="barra_id")   # セッション開始時に一度
+npf.set_columns(date="trade_date", id="barra_id")  # セッション開始時に一度
 npf.quantile.quantile_returns(df, ..., date_col="dt")  # 個別に上書き
 ```
 

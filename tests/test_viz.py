@@ -229,6 +229,47 @@ class TestQuantileCharts:
         turnover = quantile.quantile_turnover(panel, factor="factor")
         assert n_series(viz.plot_quantile_turnover(turnover)) == 5
 
+    @pytest.fixture
+    def two_factors(self, panel):
+        """2 本目のファクターは 1 本目と独立させる。"""
+        return panel.assign(other=np.random.default_rng(8).normal(0, 1, len(panel)))
+
+    def test_double_sort_heatmap(self, two_factors):
+        cells = quantile.double_sort_returns(
+            two_factors,
+            factor_1="factor",
+            factor_2="other",
+            forward_return="fwd_ret",
+            n_quantiles_1=3,
+            n_quantiles_2=3,
+        )
+        matrix = quantile.double_sort_summary(cells, statistic="mean")
+        fig = viz.plot_double_sort(matrix)
+        assert len(fig.axes) == 2, "本体とカラーバー"
+        assert len(fig.axes[0].texts) == int(matrix.notna().to_numpy().sum())
+
+    def test_double_sort_counts_use_single_hue(self, two_factors):
+        counts = quantile.double_sort_counts(
+            two_factors, factor_1="factor", factor_2="other", n_quantiles_2=3
+        )
+        fig = viz.plot_double_sort(counts, as_percent=False)
+        assert fig.axes[0].collections[0].get_clim()[0] == 0.0, "非負なら 0 起点"
+
+    def test_empty_cells_are_left_blank(self, panel):
+        """相関の高い 2 本だと非対角が空になる。そこは注記もしない。"""
+        correlated = panel.assign(other=panel["factor"])
+        cells = quantile.double_sort_returns(
+            correlated, factor_1="factor", factor_2="other", forward_return="fwd_ret"
+        )
+        matrix = quantile.double_sort_summary(cells)
+        assert matrix.notna().to_numpy().sum() < matrix.size, "空セルがある"
+        fig = viz.plot_double_sort(matrix)
+        assert len(fig.axes[0].texts) == int(matrix.notna().to_numpy().sum())
+
+    def test_double_sort_rejects_empty(self):
+        with pytest.raises(ValidationError, match="セルがありません"):
+            viz.plot_double_sort(pd.DataFrame())
+
     def test_transition_matrix(self, panel):
         matrix = quantile.quantile_transition_matrix(panel, factor="factor")
         fig = viz.plot_transition_matrix(matrix)

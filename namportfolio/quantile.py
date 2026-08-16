@@ -36,6 +36,9 @@ __all__ = [
     "assign_quantiles",
     "quantile_returns",
     "class_returns",
+    "double_sort_returns",
+    "double_sort_summary",
+    "double_sort_counts",
     "quantile_summary",
     "long_short_returns",
     "information_coefficient",
@@ -240,6 +243,175 @@ def class_returns(
         date_col=date_col,
         order=order,
     )
+
+
+def double_sort_returns(
+    data: pd.DataFrame,
+    *,
+    factor_1: str,
+    factor_2: str,
+    forward_return: str,
+    n_quantiles_1: int = 5,
+    n_quantiles_2: int = 5,
+    weight: str | None = None,
+    group: str | None = None,
+    ascending_1: bool = True,
+    ascending_2: bool = True,
+    min_assets: int | None = None,
+    date_col: str | None = None,
+    id_col: str | None = None,
+) -> pd.DataFrame:
+    """2 つのファクターで独立に分位を作り、その交差セルごとの期間リターンを返す。
+
+    2 次元ソート（QQ 分析）。「バリューが効くのは低モメンタム銘柄だけではないか」
+    のように、**シグナル同士の相互作用**を見るために使う。
+
+    Parameters
+    ----------
+    factor_1, factor_2 :
+        分位を作る 2 つのファクター。``factor_1`` が行、``factor_2`` が列になる。
+    n_quantiles_1, n_quantiles_2 :
+        それぞれの分位数。
+    weight :
+        セル内のリターンを加重平均するカラム名。``None`` なら等ウェイト。
+
+    Returns
+    -------
+    pd.DataFrame
+        ``MultiIndex (date, factor_1 の分位)``、``columns`` は ``factor_2`` の分位。
+        期間ごとの値なので、:func:`double_sort_summary` で集計して図にする。
+
+    Notes
+    -----
+    分位は**独立に**割り当てる（``factor_2`` の中で ``factor_1`` を切る条件付き
+    ソートではない）。2 つのファクターの相関が高いと対角セルに銘柄が偏るので、
+    :func:`double_sort_counts` で各セルの銘柄数を必ず確認すること。
+    """
+    frame, labels_1, labels_2 = _double_sort_frame(
+        data,
+        factor_1=factor_1,
+        factor_2=factor_2,
+        value=forward_return,
+        n_quantiles_1=n_quantiles_1,
+        n_quantiles_2=n_quantiles_2,
+        weight=weight,
+        group=group,
+        ascending_1=ascending_1,
+        ascending_2=ascending_2,
+        min_assets=min_assets,
+        date_col=date_col,
+        id_col=id_col,
+    )
+
+    if weight is None:
+        grouped = frame.groupby(["_date", "_q1", "_q2"], observed=True)["_value"].mean()
+    else:
+        frame["_weighted"] = frame["_value"] * frame["_weight"]
+        sums = frame.groupby(["_date", "_q1", "_q2"], observed=True)[["_weighted", "_weight"]].sum()
+        grouped = sums["_weighted"] / sums["_weight"].replace(0, np.nan)
+
+    wide = grouped.unstack("_q2").reindex(columns=labels_2)
+    wide.index = wide.index.set_names([_resolve_date_col(date_col), factor_1])
+    wide.columns.name = factor_2
+    return wide.sort_index()
+
+
+def double_sort_summary(
+    cell_returns: pd.DataFrame,
+    *,
+    statistic: str = "annualized_return",
+    periods_per_year: float | None = None,
+) -> pd.DataFrame:
+    """2 次元ソートの結果を 1 枚のマトリクスに集計する。
+
+    Parameters
+    ----------
+    cell_returns :
+        :func:`double_sort_returns` の出力。
+    statistic :
+        ``"mean"`` / ``"annualized_return"``（既定）/ ``"sharpe_ratio"`` /
+        ``"t_stat"`` / ``"hit_rate"`` / ``"n_periods"``。
+
+    Returns
+    -------
+    pd.DataFrame
+        ``index`` が ``factor_1`` の分位、``columns`` が ``factor_2`` の分位。
+        そのままヒートマップにできる。
+    """
+    if statistic not in _CELL_STATISTICS:
+        raise ValidationError(
+            f"statistic は {sorted(_CELL_STATISTICS)} のいずれかです: {statistic!r}"
+        )
+
+    stacked = cell_returns.stack()
+    values = {}
+    for (row, column), series in stacked.groupby(level=[1, 2], observed=True):
+        series = series.droplevel([1, 2]).dropna()
+        # 2 つのファクターの相関が高いと非対角セルが空になる。年率化には日付が
+        # 2 点以上必要なので、埋まっていないセルは統計量を出さず NaN にする
+        if series.empty or (
+            len(series) < 2 and statistic in _NEEDS_FREQUENCY and periods_per_year is None
+        ):
+            values[(row, column)] = np.nan
+            continue
+        values[(row, column)] = _CELL_STATISTICS[statistic](series, periods_per_year)
+
+    matrix = pd.Series(values).unstack()
+    matrix = matrix.reindex(
+        index=cell_returns.index.get_level_values(1).unique(),
+        columns=cell_returns.columns,
+    )
+    matrix.index.name = cell_returns.index.names[1]
+    matrix.columns.name = cell_returns.columns.name
+    return matrix
+
+
+def double_sort_counts(
+    data: pd.DataFrame,
+    *,
+    factor_1: str,
+    factor_2: str,
+    n_quantiles_1: int = 5,
+    n_quantiles_2: int = 5,
+    group: str | None = None,
+    ascending_1: bool = True,
+    ascending_2: bool = True,
+    min_assets: int | None = None,
+    date_col: str | None = None,
+    id_col: str | None = None,
+) -> pd.DataFrame:
+    """交差セルごとの平均銘柄数。
+
+    2 つのファクターの相関が高いと、対角セルに銘柄が集まって非対角がほとんど
+    空になる。**セル別リターンを読む前にこれを見る。** 数銘柄しかないセルの
+    リターンは解釈に耐えない。
+
+    Returns
+    -------
+    pd.DataFrame
+        ``index`` が ``factor_1`` の分位、``columns`` が ``factor_2`` の分位。
+    """
+    frame, labels_1, labels_2 = _double_sort_frame(
+        data,
+        factor_1=factor_1,
+        factor_2=factor_2,
+        value=None,
+        n_quantiles_1=n_quantiles_1,
+        n_quantiles_2=n_quantiles_2,
+        weight=None,
+        group=group,
+        ascending_1=ascending_1,
+        ascending_2=ascending_2,
+        min_assets=min_assets,
+        date_col=date_col,
+        id_col=id_col,
+    )
+    per_period = frame.groupby(["_date", "_q1", "_q2"], observed=True).size()
+    matrix = per_period.groupby(level=[1, 2], observed=True).mean().unstack("_q2")
+    matrix = matrix.reindex(index=labels_1, columns=labels_2)
+    matrix.index.name = factor_1
+    matrix.columns.name = factor_2
+    return matrix
 
 
 def quantile_summary(
@@ -601,6 +773,84 @@ def _label(quantile: float, missing_label: str = MISSING_LABEL) -> str:
     if quantile == _MISSING_CODE:
         return missing_label
     return f"Q{int(quantile)}"
+
+
+def _resolve_date_col(date_col: str | None) -> str:
+    return resolve_columns(date_col, None)[0]
+
+
+def _double_sort_frame(
+    data: pd.DataFrame,
+    *,
+    factor_1: str,
+    factor_2: str,
+    value: str | None,
+    n_quantiles_1: int,
+    n_quantiles_2: int,
+    weight: str | None,
+    group: str | None,
+    ascending_1: bool,
+    ascending_2: bool,
+    min_assets: int | None,
+    date_col: str | None,
+    id_col: str | None,
+) -> tuple[pd.DataFrame, list[str], list[str]]:
+    """2 次元ソートの共通前処理。両ファクターの分位を割り当てて縦持ちにする。"""
+    date_col, id_col = resolve_columns(date_col, id_col)
+    needed = [date_col, factor_1, factor_2]
+    if value is not None:
+        needed.append(value)
+    if weight is not None:
+        needed.append(weight)
+    require_columns(data, needed, context="double_sort")
+
+    common = {
+        "group": group,
+        "min_assets": min_assets,
+        "date_col": date_col,
+        "id_col": id_col,
+    }
+    first = assign_quantiles(
+        data, factor=factor_1, n_quantiles=n_quantiles_1, ascending=ascending_1, **common
+    )
+    second = assign_quantiles(
+        data, factor=factor_2, n_quantiles=n_quantiles_2, ascending=ascending_2, **common
+    )
+
+    frame = pd.DataFrame(
+        {
+            "_date": pd.to_datetime(data[date_col]),
+            "_q1": first.map(_label, na_action="ignore"),
+            "_q2": second.map(_label, na_action="ignore"),
+        }
+    )
+    subset = ["_date", "_q1", "_q2"]
+    if value is not None:
+        frame["_value"] = data[value]
+        subset.append("_value")
+    if weight is not None:
+        frame["_weight"] = data[weight]
+        subset.append("_weight")
+
+    return (
+        frame.dropna(subset=subset),
+        quantile_labels(n_quantiles_1),
+        quantile_labels(n_quantiles_2),
+    )
+
+
+#: :func:`double_sort_summary` が受け付ける統計量。
+_CELL_STATISTICS = {
+    "mean": lambda s, ppy: s.mean(),
+    "annualized_return": lambda s, ppy: perf.annualized_return(s, periods_per_year=ppy),
+    "sharpe_ratio": lambda s, ppy: perf.sharpe_ratio(s, periods_per_year=ppy),
+    "t_stat": lambda s, ppy: t_statistic(s),
+    "hit_rate": lambda s, ppy: perf.hit_rate(s),
+    "n_periods": lambda s, ppy: float(len(s)),
+}
+
+#: 年率化のためにデータ頻度の推定が要る統計量。
+_NEEDS_FREQUENCY = {"annualized_return", "sharpe_ratio"}
 
 
 def _returns_by_label(

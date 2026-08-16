@@ -39,6 +39,7 @@ from .performance import (
     plot_rolling,
 )
 from .quantile import (
+    plot_double_sort,
     plot_factor_decay,
     plot_ic,
     plot_ic_heatmap,
@@ -74,6 +75,7 @@ __all__ = [
     # F2 分位分析
     "plot_quantile_returns",
     "plot_quantile_cumulative",
+    "plot_double_sort",
     "plot_ic",
     "plot_ic_heatmap",
     "plot_factor_decay",

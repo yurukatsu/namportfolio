@@ -28,6 +28,7 @@ from . import theme
 __all__ = [
     "plot_quantile_returns",
     "plot_quantile_cumulative",
+    "plot_double_sort",
     "plot_ic",
     "plot_ic_heatmap",
     "plot_factor_decay",
@@ -134,6 +135,85 @@ def plot_quantile_cumulative(
 
         theme.percent_axis(ax)
         theme.finalize(ax, title=title, ylabel="Cumulative return", legend=True, zero_line=True)
+    return fig
+
+
+def plot_double_sort(
+    matrix: pd.DataFrame,
+    *,
+    as_percent: bool = True,
+    polarity: bool | None = None,
+    annotate: bool = True,
+    fmt: str | None = None,
+    title: str | None = None,
+    ax=None,
+) -> Figure:
+    """2 次元ソート（QQ 分析）のヒートマップ。
+
+    縦軸が ``factor_1`` の分位、横軸が ``factor_2`` の分位。セルの値は
+    :func:`namportfolio.quantile.double_sort_summary` で集計した統計量。
+
+    Parameters
+    ----------
+    matrix :
+        :func:`namportfolio.quantile.double_sort_summary` または
+        :func:`namportfolio.quantile.double_sort_counts` の出力。
+    as_percent :
+        ``True``（既定）なら 100 倍して % として表示する。銘柄数を描くときは
+        ``False`` にする。
+    polarity :
+        ``True`` で発散配色（正負が意味を持つリターン向け）、``False`` で単一色相
+        （銘柄数のような非負の量向け）。``None`` なら負の値の有無で自動判定。
+
+    Notes
+    -----
+    セルの銘柄数が少ないと値が暴れる。**リターンのヒートマップを読む前に
+    :func:`namportfolio.quantile.double_sort_counts` で中身を確認すること。**
+    """
+    if matrix.empty:
+        raise ValidationError("セルがありません。")
+
+    values = matrix.to_numpy(dtype=float)
+    if as_percent:
+        values = values * 100.0
+    if np.isnan(values).all():
+        raise ValidationError("すべてのセルが欠損しています。")
+
+    if polarity is None:
+        polarity = bool(np.nanmin(values) < 0)
+    if polarity:
+        limit = float(np.nanmax(np.abs(values)))
+        bounds = (-limit, limit)
+        cmap = theme.diverging_cmap()
+        ticks = np.linspace(-limit, limit, 5)
+    else:
+        bounds = (0.0, float(np.nanmax(values)))
+        cmap = theme.sequential_cmap()
+        ticks = np.linspace(*bounds, 5)
+
+    with theme.styled():
+        rows, columns = matrix.shape
+        fig, ax = theme.new_axes(
+            ax, figsize=(max(4.0, 0.9 * columns + 2.4), max(3.0, 0.7 * rows + 1.6))
+        )
+        mesh = theme.heatmap(
+            ax,
+            values,
+            xticks=[str(c) for c in matrix.columns],
+            yticks=[str(i) for i in matrix.index],
+            cmap=cmap,
+            vmin=bounds[0],
+            vmax=bounds[1],
+            annotate=annotate,
+            fmt=fmt or ("{:.2f}" if as_percent else "{:.1f}"),
+        )
+        theme.add_colorbar(fig, mesh, ax, ticks=ticks)
+        theme.finalize(
+            ax,
+            title=title or "Double sort",
+            xlabel=str(matrix.columns.name or ""),
+            ylabel=str(matrix.index.name or ""),
+        )
     return fig
 
 
