@@ -47,6 +47,14 @@ from .quantile import (
     plot_quantile_turnover,
     plot_transition_matrix,
 )
+from .risk import (
+    plot_bias_statistic,
+    plot_exposures,
+    plot_factor_contribution,
+    plot_risk_contribution,
+    plot_risk_decomposition,
+    plot_risk_forecast,
+)
 from .signals import (
     plot_coverage,
     plot_distribution,
@@ -87,4 +95,11 @@ __all__ = [
     "plot_effects_by_segment",
     "plot_cumulative_effects",
     "plot_effect_heatmap",
+    # F6 / F7 Barra リスク
+    "plot_exposures",
+    "plot_risk_decomposition",
+    "plot_risk_contribution",
+    "plot_factor_contribution",
+    "plot_risk_forecast",
+    "plot_bias_statistic",
 ]

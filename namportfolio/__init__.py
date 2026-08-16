@@ -2,7 +2,7 @@
 
 import importlib
 
-from . import attribution, holdings, performance, quantile, signals, stats
+from . import attribution, holdings, performance, quantile, risk, signals, stats
 from .core import (
     NamPortfolioError,
     ValidationError,
@@ -39,6 +39,7 @@ __all__ = [
     "holdings",
     "performance",
     "quantile",
+    "risk",
     "signals",
     "stats",
     "viz",

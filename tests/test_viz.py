@@ -5,7 +5,7 @@ from matplotlib import pyplot as plt
 from matplotlib.colors import to_rgba
 from matplotlib.figure import Figure
 
-from namportfolio import attribution, holdings, quantile, signals, viz
+from namportfolio import attribution, holdings, quantile, risk, signals, viz
 from namportfolio.core.errors import ValidationError
 from namportfolio.performance import MONTH_END
 from namportfolio.viz import theme
@@ -473,6 +473,115 @@ class TestAttributionCharts:
     def test_effect_heatmap_unknown_effect(self, effects):
         with pytest.raises(ValidationError, match="列がありません"):
             viz.plot_effect_heatmap(effects, effect="timing")
+
+
+class TestRiskCharts:
+    FACTORS = ["F1", "F2", "F3"]
+
+    @pytest.fixture
+    def panel(self):
+        dates = pd.date_range("2022-01-31", periods=24, freq=MONTH_END)
+        rng = np.random.default_rng(23)
+        rows = []
+        for date in dates:
+            for i in range(20):
+                rows.append(
+                    {
+                        "date": date,
+                        "bid": f"JP{i:04d}",
+                        "weight": 0.05,
+                        "F1": rng.normal(0, 1),
+                        "F2": rng.normal(0, 1),
+                        "F3": rng.normal(0, 1),
+                        "specific_risk": 0.20,
+                        "specific_ret": rng.normal(0, 0.02),
+                    }
+                )
+        return pd.DataFrame(rows)
+
+    @pytest.fixture
+    def covariance(self, panel):
+        dates = panel["date"].unique()
+        base = np.array([[0.04, 0.01, 0.00], [0.01, 0.09, 0.02], [0.00, 0.02, 0.06]])
+        rows = [
+            {"date": date, "factor_1": a, "factor_2": b, "cov": base[i, j]}
+            for date in dates
+            for i, a in enumerate(self.FACTORS)
+            for j, b in enumerate(self.FACTORS)
+        ]
+        return pd.DataFrame(rows)
+
+    def test_exposures(self, panel):
+        exposures = risk.factor_exposures(panel, factors=self.FACTORS)
+        assert n_series(viz.plot_exposures(exposures)) == 3
+
+    def test_risk_decomposition_is_not_stacked(self, panel, covariance):
+        decomp = risk.risk_decomposition(panel, covariance, factors=self.FACTORS)
+        fig = viz.plot_risk_decomposition(decomp)
+        assert n_series(fig) == 3
+        assert len(fig.axes[0].collections) == 0, "リスクは足せないので積み上げない"
+
+    def test_risk_contribution_bars(self, panel, covariance):
+        contrib = risk.factor_risk_contribution(panel, covariance, factors=self.FACTORS)
+        fig = viz.plot_risk_contribution(contrib)
+        assert len(fig.axes[0].containers[0]) == 4, "3 ファクター + specific"
+
+    def test_risk_contribution_top_n(self, panel, covariance):
+        contrib = risk.factor_risk_contribution(panel, covariance, factors=self.FACTORS)
+        fig = viz.plot_risk_contribution(contrib, top=2)
+        assert len(fig.axes[0].containers[0]) == 2
+
+    def test_risk_contribution_requires_multiindex(self, panel, covariance):
+        contrib = risk.factor_risk_contribution(panel, covariance, factors=self.FACTORS)
+        with pytest.raises(ValidationError, match="MultiIndex"):
+            viz.plot_risk_contribution(contrib.reset_index())
+
+    def test_factor_contribution(self, panel):
+        factor_returns = pd.DataFrame(
+            np.random.default_rng(2).normal(0, 0.02, (24, 3)),
+            index=pd.to_datetime(sorted(panel["date"].unique())),
+            columns=self.FACTORS,
+        )
+        attributed = risk.factor_return_attribution(
+            panel, factor_returns, factors=self.FACTORS, specific_return="specific_ret"
+        )
+        fig = viz.plot_factor_contribution(attributed)
+        assert n_series(fig) == 5, "3 ファクター + specific + total"
+
+    def test_specific_is_not_a_series_colour(self, panel):
+        factor_returns = pd.DataFrame(
+            np.random.default_rng(2).normal(0, 0.02, (24, 3)),
+            index=pd.to_datetime(sorted(panel["date"].unique())),
+            columns=self.FACTORS,
+        )
+        attributed = risk.factor_return_attribution(
+            panel, factor_returns, factors=self.FACTORS, specific_return="specific_ret"
+        )
+        fig = viz.plot_factor_contribution(attributed)
+        labels = fig.axes[0].get_legend_handles_labels()[1]
+        specific_line = fig.axes[0].lines[labels.index("specific")]
+        assert to_rgba(specific_line.get_color()) == to_rgba(theme.palette()["muted"])
+
+    def test_risk_forecast(self):
+        idx = pd.date_range("2020-01-31", periods=60, freq=MONTH_END)
+        rng = np.random.default_rng(3)
+        realized = pd.Series(rng.normal(0, 0.03, 60), index=idx)
+        predicted = pd.Series(0.10, index=idx)
+        comparison = risk.realized_vs_predicted(realized, predicted, window=12)
+        assert n_series(viz.plot_risk_forecast(comparison)) == 2
+
+    def test_bias_statistic_band(self):
+        idx = pd.date_range("2020-01-31", periods=60, freq=MONTH_END)
+        rng = np.random.default_rng(4)
+        realized = pd.Series(rng.normal(0, 0.03, 60), index=idx)
+        predicted = pd.Series(0.10, index=idx)
+        bias = risk.rolling_bias_statistic(realized, predicted, 24)
+        fig = viz.plot_bias_statistic(bias)
+        assert len(fig.axes[0].collections) == 1, "信頼区間の帯"
+
+    def test_bias_rejects_frame(self):
+        with pytest.raises(ValidationError, match="Series のみ"):
+            viz.plot_bias_statistic(pd.DataFrame({"a": [1.0]}))
 
 
 class TestTheme:
