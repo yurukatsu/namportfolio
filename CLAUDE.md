@@ -21,8 +21,8 @@ uv run ruff check .      # lint
 | `performance.py` | F4 リターン評価（絶対・相対・DD・期間集計・ローリング） | ✅ |
 | `quantile.py` | F2 分位分析（分位リターン・IC・減衰・ターンオーバー） | ✅ |
 | `stats.py` | F8 のうち t 値と Newey-West のみ | ⚠️ 部分 |
-| `viz/` | `theme` / `performance` / `quantile` | ✅ |
-| `signals.py` | F1 シグナル前処理・診断 | 未着手 |
+| `viz/` | `theme` / `performance` / `quantile` / `signals` | ✅ |
+| `signals.py` | F1 シグナル前処理・診断（ファクター曝露は F6 待ち） | ⚠️ 部分 |
 | `holdings.py` | F3 保有ベース分析 | 未着手 |
 | `attribution.py` | F5 Brinson 帰属 | 未着手 |
 | `risk.py` | F6 Barra リスク分解 / F7 妥当性検証 | 未着手 |

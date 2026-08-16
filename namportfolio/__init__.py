@@ -2,7 +2,7 @@
 
 import importlib
 
-from . import performance, quantile, stats
+from . import performance, quantile, signals, stats
 from .core import (
     NamPortfolioError,
     ValidationError,
@@ -37,6 +37,7 @@ __all__ = [
     # 機能モジュール（npf.performance.sharpe_ratio(...) のように使う）
     "performance",
     "quantile",
+    "signals",
     "stats",
     "viz",
     # 基盤

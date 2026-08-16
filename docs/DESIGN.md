@@ -308,7 +308,7 @@ namportfolio/
 │   └── panel.py            as_wide / to_long / require_columns / check_duplicates
 ├── performance.py          F4  ✅ 実装済み
 ├── quantile.py             F2  ✅ 実装済み
-├── signals.py              F1
+├── signals.py              F1  ⚠️ 前処理・診断は実装済み（ファクター曝露は F6 待ち）
 ├── holdings.py             F3
 ├── attribution.py          F5
 ├── risk.py                 F6 / F7
@@ -317,6 +317,7 @@ namportfolio/
     ├── theme.py            配色・スタイル・共通ヘルパー  ✅ 実装済み
     ├── performance.py      F4 の図  ✅ 実装済み
     ├── quantile.py         F2 の図  ✅ 実装済み
+    ├── signals.py          F1 の図  ✅ 実装済み
     └── ...                 機能ごとに 1 ファイル
 ```
 
@@ -331,7 +332,8 @@ namportfolio/
 | 3 | `viz.theme` + `viz.performance` | ✅ 完了（754 行、テスト 31 件）。配色の役割と描画ルールを §2.4 に確定 |
 | 4 | `stats` の有意性検定（F2・F4 の t 値が依存） | ✅ 完了（90 行、テスト 13 件）。t 値と Newey-West のみ |
 | 5 | `quantile`（F2）+ `viz.quantile` | ✅ 完了（842 行、テスト 44 件） |
-| 6 以降 | `signals` / `holdings` / `attribution` / `risk` / `stats` 残り | **実際に使う順** |
+| 6 | `signals`（F1、ファクター曝露を除く）+ `viz.signals` | ✅ 完了（614 行、テスト 38 件） |
+| 7 以降 | `holdings` / `attribution` / `risk` / `signals.exposure` / `stats` 残り | **実際に使う順** |
 
 全部作ってから使うのではなく、必要になったものから作る。各段階で計算の正しさをテストで担保する
 （設定・検証のテストは書かない）。

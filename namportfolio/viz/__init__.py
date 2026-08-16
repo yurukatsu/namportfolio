@@ -34,6 +34,12 @@ from .quantile import (
     plot_quantile_turnover,
     plot_transition_matrix,
 )
+from .signals import (
+    plot_coverage,
+    plot_distribution,
+    plot_distribution_stats,
+    plot_signal_correlation,
+)
 
 __all__ = [
     "theme",
@@ -52,4 +58,9 @@ __all__ = [
     "plot_factor_decay",
     "plot_quantile_turnover",
     "plot_transition_matrix",
+    # F1 シグナル診断
+    "plot_coverage",
+    "plot_distribution",
+    "plot_distribution_stats",
+    "plot_signal_correlation",
 ]

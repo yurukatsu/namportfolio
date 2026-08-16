@@ -4,7 +4,7 @@ import pytest
 from matplotlib import pyplot as plt
 from matplotlib.figure import Figure
 
-from namportfolio import quantile, viz
+from namportfolio import quantile, signals, viz
 from namportfolio.core.errors import ValidationError
 from namportfolio.performance import MONTH_END
 from namportfolio.viz import theme
@@ -232,6 +232,60 @@ class TestQuantileCharts:
         matrix = quantile.quantile_transition_matrix(panel, factor="factor")
         fig = viz.plot_transition_matrix(matrix)
         assert len(fig.axes[0].texts) == 25
+
+
+class TestSignalCharts:
+    @pytest.fixture
+    def panel(self):
+        dates = pd.date_range("2022-01-31", periods=24, freq=MONTH_END)
+        rng = np.random.default_rng(5)
+        rows = [
+            {
+                "date": date,
+                "bid": f"JP{i:04d}",
+                "value": rng.normal(0, 1),
+                "other": rng.normal(0, 1),
+            }
+            for date in dates
+            for i in range(40)
+        ]
+        frame = pd.DataFrame(rows)
+        return frame.assign(value_z=signals.standardize(frame, factor="value"))
+
+    def test_coverage(self, panel):
+        cov = signals.coverage(panel, factor="value")
+        assert isinstance(viz.plot_coverage(cov), Figure)
+
+    def test_coverage_rate_axis_is_capped(self, panel):
+        cov = signals.coverage(panel, factor="value")
+        fig = viz.plot_coverage(cov, metric="coverage_rate")
+        assert fig.axes[0].get_ylim()[1] >= 1.0
+
+    def test_coverage_unknown_metric(self, panel):
+        cov = signals.coverage(panel, factor="value")
+        with pytest.raises(ValidationError, match="必須カラム"):
+            viz.plot_coverage(cov, metric="omega")
+
+    def test_distribution_single(self, panel):
+        fig = viz.plot_distribution(panel, factor="value")
+        assert n_series(fig) == 0, "1 系列なら凡例は不要"
+
+    def test_distribution_comparison(self, panel):
+        fig = viz.plot_distribution(panel, factor="value", compare="value_z")
+        assert n_series(fig) == 2
+
+    def test_distribution_stats(self, panel):
+        summary = signals.distribution_summary(panel, factor="value")
+        assert isinstance(viz.plot_distribution_stats(summary, metric="skew"), Figure)
+
+    def test_correlation_heatmap(self, panel):
+        corr = signals.signal_correlation(panel, factors=["value", "other", "value_z"])
+        fig = viz.plot_signal_correlation(corr)
+        assert len(fig.axes[0].texts) == 9
+
+    def test_correlation_requires_square(self, panel):
+        with pytest.raises(ValidationError, match="正方行列"):
+            viz.plot_signal_correlation(pd.DataFrame(np.zeros((2, 3))))
 
 
 class TestTheme:

@@ -277,10 +277,14 @@ def new_axes(ax=None, *, figsize: tuple[float, float] | None = None):
     """``ax`` が ``None`` なら新しい Figure と Axes を作る。
 
     既存の Axes を渡せばそこに描く（tearsheet のように図を組み合わせる用途）。
+
+    ``layout="constrained"`` を使い、**描画の時点で**余白を確定させる。
+    ``savefig(bbox_inches="tight")`` に頼ると、呼び出し側が :func:`styled` の外で
+    保存したときにラベルが切れる。
     """
     if ax is not None:
         return ax.figure, ax
-    fig, ax = plt.subplots(figsize=figsize)
+    fig, ax = plt.subplots(figsize=figsize, layout="constrained")
     return fig, ax
 
 
