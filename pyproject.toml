@@ -1,0 +1,50 @@
+[project]
+name = "namportfolio"
+version = "0.1.0"
+description = "アクティブ運用戦略のパフォーマンス評価・可視化"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "pandas>=2.0",
+    "numpy>=1.24",
+]
+
+[project.optional-dependencies]
+viz = [
+    "matplotlib>=3.7",
+    "plotly>=5.18",
+]
+stats = [
+    "statsmodels>=0.14",
+    "scikit-learn>=1.3",
+]
+all = [
+    "matplotlib>=3.7",
+    "plotly>=5.18",
+    "statsmodels>=0.14",
+    "scikit-learn>=1.3",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.6",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["namportfolio"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "SIM", "UP"]
+# __all__ は機能カテゴリ順に並べたいのでソート強制は外す
+ignore = ["RUF022"]
