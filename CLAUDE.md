@@ -20,7 +20,7 @@ uv run ruff check .      # lint
 | `core/` | カラム名設定、頻度推定、long ⇄ wide 変換 | ✅ |
 | `performance.py` | F4 リターン評価（絶対・相対・DD・期間集計・ローリング） | ✅ |
 | `quantile.py` | F2 分位分析（分位リターン・IC・減衰・ターンオーバー） | ✅ |
-| `stats.py` | F8 のうち t 値と Newey-West のみ | ⚠️ 部分 |
+| `stats.py` | F8 有意性・ブートストラップ・安定性・局面・多重検定 | ✅ |
 | `viz/` | `theme` / `performance` / `quantile` / `signals` / `holdings` | ✅ |
 | `signals.py` | F1 シグナル前処理・診断、既存ファクターへの曝露 | ✅ |
 | `holdings.py` | F3 保有ベース分析（構造・特性・寄与度・売買） | ✅ |

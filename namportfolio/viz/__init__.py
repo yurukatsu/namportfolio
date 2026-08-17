@@ -64,6 +64,11 @@ from .signals import (
     plot_signal_correlation,
     plot_signal_exposure,
 )
+from .stats import (
+    plot_bootstrap,
+    plot_regime,
+    plot_subsample,
+)
 
 __all__ = [
     "theme",
@@ -108,4 +113,8 @@ __all__ = [
     "plot_factor_contribution",
     "plot_risk_forecast",
     "plot_bias_statistic",
+    # F8 統計的頑健性
+    "plot_subsample",
+    "plot_regime",
+    "plot_bootstrap",
 ]

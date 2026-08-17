@@ -5,7 +5,7 @@ from matplotlib import pyplot as plt
 from matplotlib.colors import to_rgba
 from matplotlib.figure import Figure
 
-from namportfolio import attribution, holdings, quantile, risk, signals, viz
+from namportfolio import attribution, holdings, quantile, risk, signals, stats, viz
 from namportfolio.core.errors import ValidationError
 from namportfolio.performance import MONTH_END
 from namportfolio.viz import theme
@@ -653,6 +653,68 @@ class TestRiskCharts:
     def test_bias_rejects_frame(self):
         with pytest.raises(ValidationError, match="Series のみ"):
             viz.plot_bias_statistic(pd.DataFrame({"a": [1.0]}))
+
+
+class TestStatsCharts:
+    @pytest.fixture
+    def returns(self):
+        idx = pd.date_range("2015-01-31", periods=120, freq=MONTH_END)
+        return pd.Series(np.random.default_rng(30).normal(0.005, 0.03, 120), index=idx)
+
+    @pytest.fixture
+    def benchmark(self, returns):
+        return pd.Series(
+            np.random.default_rng(31).normal(0.004, 0.04, len(returns)), index=returns.index
+        )
+
+    def test_subsample_bars(self, returns):
+        table = stats.subsample(returns, n_splits=4)
+        fig = viz.plot_subsample(table)
+        assert len(fig.axes[0].containers[0]) == 4
+
+    def test_subsample_uses_period_labels(self, returns):
+        fig = viz.plot_subsample(stats.subsample(returns, n_splits=2))
+        labels = [t.get_text() for t in fig.axes[0].get_xticklabels()]
+        assert "2015-01" in labels[0], "期間で見出しを付ける"
+
+    def test_subsample_polarity_colours(self):
+        idx = pd.date_range("2015-01-31", periods=100, freq=MONTH_END)
+        values = pd.Series(np.r_[np.full(50, -0.01), np.full(50, 0.02)], index=idx)
+        fig = viz.plot_subsample(stats.subsample(values, n_splits=2))
+        colors = {bar.get_facecolor() for bar in fig.axes[0].containers[0]}
+        assert len(colors) == 2, "符号が違えば色も変わる"
+
+    def test_subsample_unknown_metric(self, returns):
+        with pytest.raises(ValidationError, match="必須カラム"):
+            viz.plot_subsample(stats.subsample(returns), metric="omega")
+
+    def test_regime_bars_with_share(self, returns, benchmark):
+        table = stats.regime_summary(returns, stats.make_regimes(benchmark))
+        fig = viz.plot_regime(table)
+        assert len(fig.axes[0].containers[0]) == 2
+        assert len(fig.axes[0].texts) == 2, "期間の割合を添える"
+
+    def test_regime_share_can_be_hidden(self, returns, benchmark):
+        table = stats.regime_summary(returns, stats.make_regimes(benchmark))
+        fig = viz.plot_regime(table, show_share=False)
+        assert len(fig.axes[0].texts) == 0
+
+    def test_bootstrap_histogram(self, returns):
+        distribution = stats.bootstrap_distribution(returns, n_boot=1000)
+        interval = stats.bootstrap_ci(returns, n_boot=1000)
+        fig = viz.plot_bootstrap(distribution, observed=returns.mean(), interval=interval)
+        assert len(fig.axes[0].patches) > 0, "ヒストグラム"
+        assert len(fig.axes[0].lines) == 2, "帰無値と観測値の縦線"
+        assert len(fig.axes[0].texts) == 1
+
+    def test_bootstrap_without_optional_marks(self, returns):
+        distribution = stats.bootstrap_distribution(returns, n_boot=500)
+        fig = viz.plot_bootstrap(distribution)
+        assert len(fig.axes[0].lines) == 1, "帰無値の線だけ"
+
+    def test_bootstrap_rejects_empty(self):
+        with pytest.raises(ValidationError, match="空です"):
+            viz.plot_bootstrap(np.array([np.nan, np.nan]))
 
 
 class TestTheme:
