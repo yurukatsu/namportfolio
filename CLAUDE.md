@@ -79,11 +79,35 @@ wide 化で空くセルは埋めない（ユニバース変動で穴が空くの
 
 ## 環境の注意点
 
-- **pandas 3.0** を使用。頻度文字列は `"ME"` / `"QE"` / `"YE"`（旧 `"M"` は削除済み）。
-  `performance.MONTH_END` などの定数がバージョン差を吸収する。
-- **`groupby.transform` にカスタム関数を渡さない。** pandas 3.0 では内部で
+**開発環境は pandas 3.0 だが、配布先の社内環境は pandas 2.1.4（変更不可）。**
+両方で動く書き方をすること。社内環境の構成:
+
+```
+Python 3.12 / pandas 2.1.4 / numpy 1.26.3 / matplotlib 3.10.3
+plotly 5.18.0 / statsmodels 0.14.5 / scipy 1.14.1 / scikit-learn 1.5.2 / polars 0.20.7
+```
+
+変更したら**必ず両方でテストする**。社内相当の環境は次で作れる:
+
+```bash
+uv venv --python 3.12 --seed /tmp/legacy
+/tmp/legacy/bin/python -m pip install 'pandas==2.1.4' 'numpy==1.26.3' \
+  'matplotlib==3.10.3' 'scipy==1.14.1' 'pytest>=8'
+/tmp/legacy/bin/python -m pytest -q      # リポジトリのルートで
+```
+
+### pandas 2.1 で使えないもの（実際に踏んだ）
+
+- **`groupby.apply(..., include_groups=False)`** — 2.2 以降。`apply` を避けて
+  ベクトル化するか、キーを外部 Series として渡す
+- **頻度文字列 `"ME"` / `"QE"` / `"YE"`** — 2.2 以降。`performance.MONTH_END`
+  などの定数がバージョン差を吸収するので、**直書きしない**（ノートブックでも）
+
+### pandas 3.0 で使えないもの
+
+- **`groupby.transform` にカスタム関数を渡さない。** 内部で
   `concat(ignore_index=True)` され index が保たれず例外になる。組み込み集約名
-  （`transform("count")`）か `groupby.rank` を使う。
+  （`transform("count")`）か `groupby.rank` を使う
 - **`DataFrame - Series` は列方向にブロードキャストされる。** 日付方向に引くときは
   `.sub(series, axis=0)` を明示する（一度これでバグを出している）。
 - **順位相関は `rank()` してから Pearson を取る。** pandas の `corr(method="spearman")` は

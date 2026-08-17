@@ -378,10 +378,10 @@ viz = [
 
 [package.metadata]
 requires-dist = [
-    { name = "matplotlib", marker = "extra == 'dev'", specifier = ">=3.7" },
-    { name = "matplotlib", marker = "extra == 'viz'", specifier = ">=3.7" },
+    { name = "matplotlib", marker = "extra == 'dev'", specifier = ">=3.6" },
+    { name = "matplotlib", marker = "extra == 'viz'", specifier = ">=3.6" },
     { name = "numpy", specifier = ">=1.24" },
-    { name = "pandas", specifier = ">=2.0" },
+    { name = "pandas", specifier = ">=2.1" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.6" },
     { name = "scikit-learn", marker = "extra == 'stats'", specifier = ">=1.3" },

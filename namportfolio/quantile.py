@@ -935,22 +935,35 @@ def _ic_by_group(
     min_assets: int,
     date_col: str,
 ) -> pd.DataFrame:
-    """グループごとの IC。グループ数は業種程度を想定しているので素直に回す。"""
+    """グループごとの IC。
+
+    ``groupby.apply`` は使わない。グループを除外する ``include_groups`` は
+    pandas 2.2 以降にしか無く、社内環境（2.1）では動かないため。相関の定義
+    そのままをベクトル化して計算する。
+    """
     require_columns(
         data, [date_col, group, factor, forward_return], context="information_coefficient"
     )
     frame = data[[date_col, group, factor, forward_return]].dropna().copy()
     frame[date_col] = pd.to_datetime(frame[date_col])
 
-    def _corr(chunk: pd.DataFrame) -> float:
-        if len(chunk) < min_assets:
-            return np.nan
-        values, returns = chunk[factor], chunk[forward_return]
-        if method == "spearman":
-            # pandas の corr(method="spearman") は scipy を要求する。
-            # 順位に変換してから Pearson を取れば結果は同じで、依存が増えない
-            values, returns = values.rank(), returns.rank()
-        return values.corr(returns)
+    keys = [frame[date_col], frame[group]]
+    values, returns = frame[factor], frame[forward_return]
+    if method == "spearman":
+        # pandas の corr(method="spearman") は scipy を要求する。
+        # 順位に変換してから Pearson を取れば結果は同じで、依存が増えない
+        values = values.groupby(keys, observed=True).rank()
+        returns = returns.groupby(keys, observed=True).rank()
 
-    ic = frame.groupby([date_col, group]).apply(_corr, include_groups=False)
-    return ic.unstack(group).sort_index()
+    # グループ内で中心化してから積和を取る（二乗和の差分より桁落ちしにくい）
+    centered_values = values - values.groupby(keys, observed=True).transform("mean")
+    centered_returns = returns - returns.groupby(keys, observed=True).transform("mean")
+
+    covariance = (centered_values * centered_returns).groupby(keys, observed=True).sum()
+    values_ss = (centered_values**2).groupby(keys, observed=True).sum()
+    returns_ss = (centered_returns**2).groupby(keys, observed=True).sum()
+    counts = frame.groupby(keys, observed=True)[factor].size()
+
+    scale = np.sqrt(values_ss * returns_ss).replace(0, np.nan)
+    ic = (covariance / scale).where(counts >= min_assets)
+    return ic.unstack(-1).sort_index()

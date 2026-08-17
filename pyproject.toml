@@ -4,14 +4,17 @@ version = "0.1.0"
 description = "アクティブ運用戦略のパフォーマンス評価・可視化"
 readme = "README.md"
 requires-python = ">=3.11"
+# 社内環境の pandas 2.1.4 / numpy 1.26.3 / matplotlib 3.10.3 / Python 3.12 で
+# テストが通ることを確認済み。pandas 2.1 では "ME" などの頻度文字列と
+# groupby.apply(include_groups=) が使えないため、下限を 2.1 に切っている。
 dependencies = [
-    "pandas>=2.0",
+    "pandas>=2.1",
     "numpy>=1.24",
 ]
 
 [project.optional-dependencies]
 viz = [
-    "matplotlib>=3.7",
+    "matplotlib>=3.6",  # layout="constrained" が要る
 ]
 stats = [
     "statsmodels>=0.14",
@@ -20,7 +23,7 @@ stats = [
 # pip でも入れられるよう、開発依存は dependency-groups（PEP 735）ではなく
 # optional-dependencies に置く。古い pip は --group に対応していない。
 dev = [
-    "matplotlib>=3.7",
+    "matplotlib>=3.6",
     "pytest>=8.0",
     "ruff>=0.6",
 ]

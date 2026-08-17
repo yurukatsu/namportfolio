@@ -338,6 +338,15 @@ hatchling は入っていないことがあるが、setuptools はほぼ常駐�
 `dependency-groups`（PEP 735）ではなく `optional-dependencies` に置く（古い pip は
 `--group` に対応していない）。
 
+**配布先の pandas は 2.1.4（変更不可）で、開発環境の 3.0 とは差がある。** 両方でテストが
+通ることを確認する。2.1 では次が使えないので避ける。
+
+- `groupby.apply(..., include_groups=False)`（2.2 以降）
+- 頻度文字列 `"ME"` / `"QE"` / `"YE"`（2.2 以降）— `performance.MONTH_END` 等の定数で吸収する
+
+逆に pandas 3.0 では `groupby.transform` にカスタム関数を渡すと index が壊れる。
+どちらでも動く書き方（ベクトル化、組み込み集約名）に寄せる。
+
 ---
 
 ## 3. パッケージ構成
