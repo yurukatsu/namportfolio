@@ -60,7 +60,9 @@ from .signals import (
     plot_coverage,
     plot_distribution,
     plot_distribution_stats,
+    plot_explained_ratio,
     plot_signal_correlation,
+    plot_signal_exposure,
 )
 
 __all__ = [
@@ -86,6 +88,8 @@ __all__ = [
     "plot_distribution",
     "plot_distribution_stats",
     "plot_signal_correlation",
+    "plot_signal_exposure",
+    "plot_explained_ratio",
     # F3 保有分析
     "plot_allocation",
     "plot_concentration",

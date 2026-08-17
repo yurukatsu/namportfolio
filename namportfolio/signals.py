@@ -28,6 +28,7 @@ import pandas as pd
 from .core.config import resolve_columns
 from .core.errors import ValidationError
 from .core.panel import as_wide, require_columns
+from .stats import newey_west_tstat, t_statistic
 
 __all__ = [
     "winsorize",
@@ -38,6 +39,9 @@ __all__ = [
     "distribution_summary",
     "signal_correlation",
     "rolling_signal_correlation",
+    "factor_exposure",
+    "explained_ratio",
+    "exposure_summary",
 ]
 
 _STANDARDIZE_METHODS = ("zscore", "rank")
@@ -304,6 +308,108 @@ def distribution_summary(
     return frame
 
 
+def factor_exposure(
+    data: pd.DataFrame,
+    *,
+    factor: str,
+    factors: Sequence[str],
+    weight: str | None = None,
+    date_col: str | None = None,
+    id_col: str | None = None,
+) -> pd.DataFrame:
+    """シグナルを既存ファクターに回帰した係数（＝シグナルのファクター曝露）。
+
+    **「このシグナルは結局モメンタムの焼き直しではないか」に答える。** IC が高くても
+    既存のリスクファクターで説明できてしまうなら、新しい情報は持っていない。
+
+    Parameters
+    ----------
+    factor :
+        評価したいシグナルのカラム名。標準化済みの値を渡すと係数が比較しやすい。
+    factors :
+        説明変数にする既存ファクターのカラム名。カテゴリ列（業種など）を混ぜると
+        自動でダミー化される。
+    weight :
+        加重最小二乗に使うカラム名。
+
+    Returns
+    -------
+    pd.DataFrame
+        ``index=date``、``columns`` は説明変数（カテゴリ列は展開後の名前）。
+        定数項は落として返す。
+
+    See Also
+    --------
+    neutralize : 同じ回帰の**残差**（曝露を取り除いたシグナル）を返す。
+    explained_ratio : 同じ回帰の決定係数。
+    """
+    coefficients, _ = _regress_by_date(
+        data,
+        factor=factor,
+        factors=factors,
+        weight=weight,
+        date_col=date_col,
+        id_col=id_col,
+    )
+    return coefficients
+
+
+def explained_ratio(
+    data: pd.DataFrame,
+    *,
+    factor: str,
+    factors: Sequence[str],
+    weight: str | None = None,
+    date_col: str | None = None,
+    id_col: str | None = None,
+) -> pd.Series:
+    """シグナルの分散のうち、既存ファクターで説明される割合（決定係数）。
+
+    1 に近いほど「既存ファクターの組み合わせで再現できてしまう」。0 に近ければ
+    独自の情報を持っている。
+
+    Returns
+    -------
+    pd.Series
+        ``index=date`` の :math:`R^2`。
+    """
+    _, ratio = _regress_by_date(
+        data,
+        factor=factor,
+        factors=factors,
+        weight=weight,
+        date_col=date_col,
+        id_col=id_col,
+    )
+    return ratio
+
+
+def exposure_summary(exposures: pd.DataFrame) -> pd.DataFrame:
+    """ファクター曝露の時系列を要約する。
+
+    曝露が期間を通じて**安定して**ゼロと異なるかを見る。ある月だけ大きく振れても
+    シグナルの性質とは言えない。
+
+    Returns
+    -------
+    pd.DataFrame
+        ``index`` は説明変数、``columns=[mean, std, t_stat, t_stat_nw, hit_rate,
+        n_periods]``。曝露も自己相関を持つので、判断には ``t_stat_nw`` を使う。
+    """
+    rows = {}
+    for name in exposures.columns:
+        series = exposures[name].dropna()
+        rows[name] = {
+            "mean": series.mean(),
+            "std": series.std(ddof=1),
+            "t_stat": t_statistic(series),
+            "t_stat_nw": newey_west_tstat(series),
+            "hit_rate": float((series > 0).mean()) if len(series) else np.nan,
+            "n_periods": len(series),
+        }
+    return pd.DataFrame(rows).T
+
+
 def signal_correlation(
     data: pd.DataFrame,
     *,
@@ -394,12 +500,76 @@ def _design_matrix(frame: pd.DataFrame) -> pd.DataFrame:
 
 def _ols_residual(y: np.ndarray, x: np.ndarray, weights: np.ndarray | None = None) -> np.ndarray:
     """最小二乗（または加重最小二乗）の残差。"""
+    return _ols(y, x, weights)[2]
+
+
+def _ols(
+    y: np.ndarray,
+    x: np.ndarray,
+    weights: np.ndarray | None = None,
+) -> tuple[np.ndarray, float, np.ndarray]:
+    """係数・決定係数・残差を返す。
+
+    ``lstsq`` は最小ノルム解を返すので、カテゴリのダミーと定数項が共線でも残差と
+    :math:`R^2` は一意に定まる（個々の係数の解釈はしない前提）。
+    """
     if weights is None:
-        beta, *_ = np.linalg.lstsq(x, y, rcond=None)
-    else:
-        root = np.sqrt(weights)
-        beta, *_ = np.linalg.lstsq(x * root[:, None], y * root, rcond=None)
-    return y - x @ beta
+        weights = np.ones_like(y)
+    root = np.sqrt(weights)
+    beta, *_ = np.linalg.lstsq(x * root[:, None], y * root, rcond=None)
+
+    residual = y - x @ beta
+    total_weight = weights.sum()
+    residual_ss = float(weights @ residual**2)
+    mean = float(weights @ y / total_weight) if total_weight else np.nan
+    total_ss = float(weights @ (y - mean) ** 2)
+    r_squared = 1.0 - residual_ss / total_ss if total_ss > 0 else np.nan
+    return beta, r_squared, residual
+
+
+def _regress_by_date(
+    data: pd.DataFrame,
+    *,
+    factor: str,
+    factors: Sequence[str],
+    weight: str | None,
+    date_col: str | None,
+    id_col: str | None,
+) -> tuple[pd.DataFrame, pd.Series]:
+    """日付ごとに横断面回帰し、係数と決定係数を返す。"""
+    date_col, _ = resolve_columns(date_col, id_col)
+    factors = list(factors)
+    require_columns(data, [date_col, factor, *factors], context="factor_exposure")
+    if weight is not None:
+        require_columns(data, [weight], context="factor_exposure")
+
+    coefficients: dict = {}
+    ratios: dict = {}
+    columns: list[str] | None = None
+
+    for date, chunk in data.groupby(pd.to_datetime(data[date_col]), sort=True):
+        design = _design_matrix(chunk[factors])
+        valid = chunk[factor].notna() & design.notna().all(axis=1)
+        if weight is not None:
+            valid &= chunk[weight].notna() & (chunk[weight] > 0)
+        if valid.sum() <= design.shape[1]:
+            continue  # 自由度が無い
+
+        beta, r_squared, _ = _ols(
+            chunk.loc[valid, factor].to_numpy(dtype=float),
+            design.loc[valid].to_numpy(dtype=float),
+            chunk.loc[valid, weight].to_numpy(dtype=float) if weight else None,
+        )
+        columns = list(design.columns)
+        coefficients[date] = pd.Series(beta, index=columns)
+        ratios[date] = r_squared
+
+    frame = pd.DataFrame(coefficients).T
+    if columns is not None:
+        # 定数項は曝露として意味がないので落とす
+        frame = frame.drop(columns=["_const"], errors="ignore")
+    frame.index.name = date_col
+    return frame.sort_index(), pd.Series(ratios, name="r_squared").sort_index()
 
 
 def _validate_corr(method: str, factors: Sequence[str]) -> None:

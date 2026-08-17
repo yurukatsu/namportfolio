@@ -381,6 +381,36 @@ class TestSignalCharts:
         with pytest.raises(ValidationError, match="正方行列"):
             viz.plot_signal_correlation(pd.DataFrame(np.zeros((2, 3))))
 
+    @pytest.fixture
+    def exposures(self, panel):
+        return signals.factor_exposure(panel, factor="value", factors=["other"])
+
+    def test_signal_exposure_bars(self, panel):
+        summary = signals.exposure_summary(
+            signals.factor_exposure(panel, factor="value", factors=["other", "value_z"])
+        )
+        fig = viz.plot_signal_exposure(summary)
+        assert len(fig.axes[0].containers[0]) == 2
+
+    def test_insignificant_exposure_is_faded(self, panel):
+        """|t| が閾値未満の棒は薄くする。"""
+        summary = signals.exposure_summary(
+            signals.factor_exposure(panel, factor="value", factors=["other", "value_z"])
+        )
+        # value_z はシグナルそのものなので有意、other はノイズなので非有意
+        fig = viz.plot_signal_exposure(summary, significance=2.0)
+        alphas = sorted(bar.get_facecolor()[3] for bar in fig.axes[0].containers[0])
+        assert alphas[0] < alphas[-1], "有意でない棒だけ透過する"
+
+    def test_explained_ratio(self, panel):
+        ratio = signals.explained_ratio(panel, factor="value", factors=["other"])
+        fig = viz.plot_explained_ratio(ratio)
+        assert fig.axes[0].get_ylim() == (0.0, 1.0), "R² は 0〜1 に固定"
+
+    def test_explained_ratio_rejects_frame(self, panel):
+        with pytest.raises(ValidationError, match="Series のみ"):
+            viz.plot_explained_ratio(pd.DataFrame({"a": [0.5]}))
+
 
 class TestHoldingCharts:
     @pytest.fixture

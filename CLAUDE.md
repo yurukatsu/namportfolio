@@ -22,7 +22,7 @@ uv run ruff check .      # lint
 | `quantile.py` | F2 分位分析（分位リターン・IC・減衰・ターンオーバー） | ✅ |
 | `stats.py` | F8 のうち t 値と Newey-West のみ | ⚠️ 部分 |
 | `viz/` | `theme` / `performance` / `quantile` / `signals` / `holdings` | ✅ |
-| `signals.py` | F1 シグナル前処理・診断（ファクター曝露は F6 待ち） | ⚠️ 部分 |
+| `signals.py` | F1 シグナル前処理・診断、既存ファクターへの曝露 | ✅ |
 | `holdings.py` | F3 保有ベース分析（構造・特性・寄与度・売買） | ✅ |
 | `attribution.py` | F5 Brinson 帰属（多階層は未実装） | ✅ |
 | `risk.py` | F6 Barra リスク分解 / F7 妥当性検証（ストレステストは未実装） | ✅ |

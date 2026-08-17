@@ -14,6 +14,7 @@ from collections.abc import Sequence
 
 import numpy as np
 import pandas as pd
+from matplotlib.colors import to_rgba
 from matplotlib.figure import Figure
 
 from ..core.errors import ValidationError
@@ -25,6 +26,8 @@ __all__ = [
     "plot_distribution",
     "plot_distribution_stats",
     "plot_signal_correlation",
+    "plot_signal_exposure",
+    "plot_explained_ratio",
 ]
 
 
@@ -171,6 +174,99 @@ def plot_distribution_stats(
             ylabel=metric,
             zero_line=True,
         )
+    return fig
+
+
+def plot_signal_exposure(
+    summary: pd.DataFrame,
+    *,
+    metric: str = "mean",
+    significance: float = 2.0,
+    title: str | None = "Signal exposure to existing factors",
+    ax=None,
+) -> Figure:
+    """シグナルの既存ファクターへの曝露。
+
+    **有意でない曝露を薄く描く。** 曝露の大きさだけを並べると、たまたま大きく
+    振れただけのファクターが目立ってしまう。
+
+    Parameters
+    ----------
+    summary :
+        :func:`namportfolio.signals.exposure_summary` の出力。
+    metric :
+        棒の長さに使う列（既定は期間平均）。
+    significance :
+        濃く描く t 値の閾値。``summary`` に ``t_stat_nw`` があればそれを、
+        無ければ ``t_stat`` を使う。
+    """
+    require_columns(summary, [metric], context="plot_signal_exposure")
+    values = summary[metric].sort_values()
+
+    t_column = next((c for c in ("t_stat_nw", "t_stat") if c in summary.columns), None)
+    if t_column is None:
+        significant = np.ones(len(values), dtype=bool)
+    else:
+        significant = summary[t_column].reindex(values.index).abs().to_numpy() >= significance
+
+    with theme.styled():
+        fig, ax = theme.new_axes(ax, figsize=(8.0, max(2.4, 0.34 * len(values) + 1.2)))
+        base = theme.polarity_colors(values.to_numpy())
+        faces = [
+            to_rgba(color, 1.0 if is_significant else 0.3)
+            for color, is_significant in zip(base, significant, strict=True)
+        ]
+        ax.barh(np.arange(len(values)), values.to_numpy(), height=0.72, color=faces)
+
+        ax.set_yticks(np.arange(len(values)), [str(i) for i in values.index])
+        ax.grid(axis="y", visible=False)
+        ax.grid(axis="x", visible=True)
+        ax.axvline(0.0, color=theme.palette()["axis"], linewidth=0.8)
+        theme.finalize(
+            ax,
+            title=title,
+            xlabel=f"{metric}  (solid = |t| >= {significance:g})",
+        )
+    return fig
+
+
+def plot_explained_ratio(
+    ratio: pd.Series,
+    *,
+    title: str | None = "Variance explained by existing factors",
+    ax=None,
+) -> Figure:
+    """シグナルの分散のうち既存ファクターで説明される割合の推移。
+
+    高止まりしていれば、そのシグナルは既存ファクターの組み合わせで再現できる。
+    """
+    if isinstance(ratio, pd.DataFrame):
+        raise ValidationError("plot_explained_ratio は Series のみ対応です。")
+
+    values = ratio.dropna()
+    with theme.styled():
+        colors = theme.palette()
+        fig, ax = theme.new_axes(ax)
+        color = theme.categorical_colors(1)[0]
+
+        ax.plot(values.index, values.to_numpy(), color=color)
+        ax.fill_between(values.index, values.to_numpy(), 0.0, color=color, alpha=0.15)
+
+        mean = float(values.mean())
+        ax.axhline(mean, color=colors["ink_secondary"], linewidth=1.0)
+        ax.annotate(
+            f" mean {mean:.0%}",
+            xy=(values.index[-1], mean),
+            xytext=(4, 0),
+            textcoords="offset points",
+            color=colors["ink_secondary"],
+            fontsize=9,
+            va="center",
+        )
+        ax.margins(x=0.02)
+        ax.set_ylim(0, 1)
+        theme.percent_axis(ax)
+        theme.finalize(ax, title=title, ylabel="R²")
     return fig
 
 

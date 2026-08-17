@@ -150,6 +150,97 @@ class TestNeutralize:
         assert result.index.equals(shuffled.index)
 
 
+class TestFactorExposure:
+    @pytest.fixture
+    def with_factors(self, panel):
+        """既存ファクター 2 本。F1 はシグナルと関係があり、F2 は無関係。"""
+        rng = np.random.default_rng(4)
+        return panel.assign(
+            F1=lambda d: d["factor"] + rng.normal(0, 0.5, len(d)),
+            F2=rng.normal(0, 1, len(panel)),
+        )
+
+    def test_exposure_to_identical_factor_is_one(self, with_factors):
+        """シグナルがファクターそのものなら係数 1、説明割合 1。"""
+        same = with_factors.assign(signal=with_factors["F1"])
+        exposure = signals.factor_exposure(same, factor="signal", factors=["F1", "F2"])
+        ratio = signals.explained_ratio(same, factor="signal", factors=["F1", "F2"])
+
+        assert exposure["F1"].to_numpy() == pytest.approx(1.0)
+        assert exposure["F2"].to_numpy() == pytest.approx(0.0, abs=1e-10)
+        assert ratio.to_numpy() == pytest.approx(1.0)
+
+    def test_scaled_factor_gives_scaled_coefficient(self, with_factors):
+        scaled = with_factors.assign(signal=with_factors["F1"] * 3.0)
+        exposure = signals.factor_exposure(scaled, factor="signal", factors=["F1"])
+        assert exposure["F1"].to_numpy() == pytest.approx(3.0)
+
+    def test_independent_signal_has_no_exposure(self, with_factors):
+        """既存ファクターと無関係なシグナルは説明されない。"""
+        independent = with_factors.assign(
+            signal=np.random.default_rng(5).normal(0, 1, len(with_factors))
+        )
+        ratio = signals.explained_ratio(independent, factor="signal", factors=["F1", "F2"])
+        assert ratio.mean() < 0.5, "10 銘柄なので完全に 0 にはならないが低いはず"
+
+    def test_constant_term_is_dropped(self, with_factors):
+        exposure = signals.factor_exposure(with_factors, factor="factor", factors=["F1", "F2"])
+        assert list(exposure.columns) == ["F1", "F2"]
+
+    def test_categorical_factor_is_expanded(self, with_factors):
+        exposure = signals.factor_exposure(with_factors, factor="factor", factors=["sector", "F1"])
+        assert "F1" in exposure.columns
+        assert any(str(c).startswith("sector_") for c in exposure.columns)
+
+    def test_residual_matches_neutralize(self, with_factors):
+        """曝露を取り除いた残りは neutralize の出力と一致する。"""
+        exposure = signals.factor_exposure(with_factors, factor="factor", factors=["F1"])
+        residual = signals.neutralize(with_factors, factor="factor", by="F1")
+
+        first = with_factors[with_factors["date"] == DATES[0]]
+        fitted = first["F1"] * exposure.loc[DATES[0], "F1"]
+        assert (first["factor"] - fitted - residual[first.index]).std() == pytest.approx(
+            0.0, abs=1e-10
+        ), "定数項のぶんだけずれるが、ばらつきは無い"
+
+    def test_weighted(self, with_factors):
+        plain = signals.factor_exposure(with_factors, factor="factor", factors=["F1"])
+        weighted = signals.factor_exposure(
+            with_factors, factor="factor", factors=["F1"], weight="mktcap"
+        )
+        assert not np.allclose(plain.to_numpy(), weighted.to_numpy())
+
+    def test_insufficient_observations(self, with_factors):
+        thin = with_factors[with_factors["bid"].isin(["JP0000"])]
+        exposure = signals.factor_exposure(thin, factor="factor", factors=["F1", "F2"])
+        assert exposure.empty
+
+    def test_missing_column(self, with_factors):
+        with pytest.raises(ValidationError, match="必須カラム"):
+            signals.factor_exposure(with_factors, factor="factor", factors=["F9"])
+
+
+class TestExposureSummary:
+    @pytest.fixture
+    def exposures(self, panel):
+        rng = np.random.default_rng(6)
+        frame = panel.assign(
+            F1=lambda d: d["factor"] + rng.normal(0, 0.5, len(d)),
+            F2=rng.normal(0, 1, len(panel)),
+        )
+        return signals.factor_exposure(frame, factor="factor", factors=["F1", "F2"])
+
+    def test_columns(self, exposures):
+        summary = signals.exposure_summary(exposures)
+        for column in ("mean", "std", "t_stat", "t_stat_nw", "hit_rate", "n_periods"):
+            assert column in summary.columns
+        assert list(summary.index) == ["F1", "F2"]
+
+    def test_related_factor_has_larger_exposure(self, exposures):
+        summary = signals.exposure_summary(exposures)
+        assert abs(summary.loc["F1", "mean"]) > abs(summary.loc["F2", "mean"])
+
+
 class TestCoverage:
     def test_counts(self, panel):
         result = signals.coverage(panel, factor="factor")
