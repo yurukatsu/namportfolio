@@ -275,11 +275,12 @@ npf.plot_quantile_cumulative(q)  # Figure を返す（show() はしない）
 
 ### 2.4 可視化 ✅ 基盤実装済み
 
-- **matplotlib のみ。** 全関数は Figure を返し `show()` はしない。`ax` を渡せば
-  既存の Axes に描く（複数図の組み合わせ用）
+- **図を作るのは matplotlib のみ。** 全関数は Figure を返し `show()` はしない。`ax` を
+  渡せば既存の Axes に描く（複数図の組み合わせ用）
 - 色・レイアウトは `viz/theme.py` に集約。`npf.viz` は遅延 import なので、
   matplotlib が無い環境でも `import namportfolio` は成功する
-- plotly が必要になったら `viz/plotly_.py` を足す。既存コードは壊れない
+- **plotly はスタイルヘルパーのみ**（`viz/plotly.py`）。図は plotly express などで
+  自由に組み立て、`apply_theme(fig)` で見た目だけ揃える。図の二重実装はしない
 
 **配色は用途で決まる。手で選ばない。**
 
@@ -292,8 +293,13 @@ npf.plot_quantile_cumulative(q)  # Figure を返す（show() はしない）
 
 **分位を categorical で塗らない。** Q1〜Q5 には順序があるので ordinal を使う。
 
-配色は色覚特性（P型・D型）下での識別性を検証済み（categorical の隣接ペア CVD ΔE 9.1 /
-通常視 19.6、OKLab ×100）。色を差し替えるときは同じ検証を通す。
+**赤基調**（コーポレートカラー）。識別色の 1 番目が赤、順序・量のランプは赤の濃淡、
+極性は**正が赤・負が青**（日本の株式慣行）。海外向けに反転するなら
+`theme.POSITIVE_HUE = "blue"`。
+
+色覚特性（P型・D型）下での識別性を検証済み。categorical は隣接ペア CVD ΔE 9.1（light）
+/ 8.4（dark）、通常視 19.6 / 19.3。ordinal は実際に使う段階数（3・5 分位）で単調な
+明度差と背景コントラストを満たす。**色を差し替えるときは同じ検証を通す。見た目で決めない。**
 
 その他の描画ルール:
 
@@ -316,7 +322,7 @@ npf.plot_quantile_cumulative(q)  # Figure を返す（show() はしない）
 
 | 作らないもの | 理由 |
 |---|---|
-| `PlotBackend` ABC（matplotlib / plotly 抽象化） | 図 30〜40 個 × 2 実装の維持コストを、使うか分からない段階で背負わない |
+| `PlotBackend` ABC（matplotlib / plotly 抽象化） | 図 30〜40 個 × 2 実装の維持コストを背負わない。plotly は**スタイルだけ**揃え、図は利用側が組み立てる |
 | `AnalysisResult` ABC | `summary()` の実装義務が実験の邪魔になる。DataFrame をそのまま返す |
 | `RiskModelLike` Protocol | DataFrame を直接受け取れば足りる |
 | 例外の細分化 | `NamPortfolioError` と `ValidationError`（`ValueError` 継承）の 2 つのみ |
@@ -385,7 +391,8 @@ namportfolio/
     ├── holdings.py         F3 の図  ✅ 実装済み
     ├── attribution.py      F5 の図  ✅ 実装済み
     ├── risk.py             F6 / F7 の図  ✅ 実装済み
-    └── ...                 機能ごとに 1 ファイル
+    ├── stats.py            F8 の図  ✅ 実装済み
+    └── plotly.py           plotly 用スタイルヘルパー  ✅ 実装済み
 ```
 
 ---

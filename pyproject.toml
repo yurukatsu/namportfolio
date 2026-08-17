@@ -16,6 +16,11 @@ dependencies = [
 viz = [
     "matplotlib>=3.6",  # layout="constrained" が要る
 ]
+# ノートブックでインタラクティブに見たい場合。図は自分で組み立て、
+# npf.viz.plotly.apply_theme で見た目だけ揃える
+plotly = [
+    "plotly>=5.18",
+]
 stats = [
     "statsmodels>=0.14",
     "scikit-learn>=1.3",
@@ -24,6 +29,7 @@ stats = [
 # optional-dependencies に置く。古い pip は --group に対応していない。
 dev = [
     "matplotlib>=3.6",
+    "plotly>=5.18",
     "pytest>=8.0",
     "ruff>=0.6",
 ]

@@ -16,7 +16,7 @@ except ImportError as exc:  # pragma: no cover
         "  pip install 'namportfolio[viz]'  もしくは  pip install matplotlib"
     ) from exc
 
-from . import theme
+from . import plotly, theme
 from .attribution import (
     plot_cumulative_effects,
     plot_effect_heatmap,
@@ -72,6 +72,7 @@ from .stats import (
 
 __all__ = [
     "theme",
+    "plotly",
     # F4 リターン評価
     "plot_cumulative_returns",
     "plot_drawdown",

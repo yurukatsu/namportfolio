@@ -61,6 +61,25 @@ npf.quantile.quantile_returns(df, ..., date_col="dt")  # 個別に上書き
 
 戻り値は素の DataFrame / Series。描画関数は Figure を返すだけで `show()` は呼ばない。
 
+## ノートブックでインタラクティブに見る
+
+計算結果は素の DataFrame なので plotly にそのまま渡せる。見た目は
+`npf.viz.plotly.apply_theme` で matplotlib 版と揃う。
+
+```python
+import plotly.express as px
+
+cum = npf.performance.cumulative_returns(pd.DataFrame({"strategy": r, "benchmark": b}))
+fig = px.line(cum)
+npf.viz.plotly.apply_theme(fig, title="Cumulative return", percent_axis="y", zero_line=True)
+```
+
+分位のように順序があるものは `ordinal=True`、ヒートマップは
+`npf.viz.plotly.diverging_scale()` を `px.imshow` に渡す。
+
+図そのものは二重実装していない。**matplotlib 版はレポート・保存用、plotly は探索用**
+という使い分け。
+
 ## インストール
 
 ビルド用の隔離環境を作れない環境（社内プロキシ配下など）では

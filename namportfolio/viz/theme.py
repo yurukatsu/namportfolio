@@ -13,13 +13,24 @@ diverging    極性（正／負のリターン、アクティブウェイト）�
 
 **分位を categorical で塗らないこと。** Q1〜Q5 には順序があるので ordinal を使う。
 
-配色は色覚特性（P型・D型）を考慮して検証済み。categorical は隣接ペアの
-CVD ΔE 9.1 / 通常視 19.6（OKLab ×100）、ordinal は単調な明度差を満たす。
-色を差し替える場合は同じ検証を通すこと。
+.. rubric:: 赤基調
+
+コーポレートカラーに合わせて赤を基調にしている。識別色の 1 番目が赤、順序・量の
+ランプは赤の濃淡、極性は**正が赤・負が青**（日本の株式慣行）。海外向けに反転する
+なら ``theme.POSITIVE_HUE = "blue"``。
+
+.. rubric:: 検証
+
+色覚特性（P型・D型）下での識別性を検証済み。
+
+- categorical: 隣接ペアの CVD ΔE 9.1（light）/ 8.4（dark）、通常視 19.6 / 19.3
+- ordinal: 実際に使う段階数（3・5 分位）で単調な明度差と背景コントラストを満たす
+
+**色を差し替えるときは同じ検証を通すこと。** 見た目で決めない。
 
 .. note::
-   categorical の 3・4・5 番目（aqua / yellow / magenta）は背景とのコントラストが
-   3:1 を下回る。5 系列以上を塗る場合は凡例だけでなく直接ラベルか数表を併記する。
+   categorical の 4・5・6 番目（aqua / yellow / magenta）は背景とのコントラストが
+   3:1 を下回る。6 系列以上を塗る場合は凡例だけでなく直接ラベルか数表を併記する。
 """
 
 from __future__ import annotations
@@ -43,6 +54,8 @@ __all__ = [
     "sequential_cmap",
     "diverging_cmap",
     "polarity_colors",
+    "POSITIVE_HUE",
+    "POLES",
     "rc_params",
     "apply_style",
     "styled",
@@ -57,8 +70,11 @@ __all__ = [
 Mode = Literal["light", "dark"]
 
 # 識別用。固定順に先頭から使う。9 系列目は作らず「その他」にまとめる。
+# 赤を先頭に置く（コーポレートカラー）。2 番目以降の並びは検証済みの順序を維持
+# しているので、隣接ペアの識別性は変わらない。
 _CATEGORICAL = {
     "light": [
+        "#e34948",
         "#2a78d6",
         "#eb6834",
         "#1baf7a",
@@ -66,9 +82,9 @@ _CATEGORICAL = {
         "#e87ba4",
         "#008300",
         "#4a3aa7",
-        "#e34948",
     ],
     "dark": [
+        "#e66767",
         "#3987e5",
         "#d95926",
         "#199e70",
@@ -76,42 +92,41 @@ _CATEGORICAL = {
         "#d55181",
         "#008300",
         "#9085e9",
-        "#e66767",
     ],
 }
 
 # 順序用の単一色相ランプ。light 端は背景から十分離れた段階から始める。
 _ORDINAL = {
     "light": [
-        "#86b6ef",
-        "#6da7ec",
-        "#5598e7",
-        "#3987e5",
-        "#2a78d6",
-        "#256abf",
-        "#1c5cab",
-        "#184f95",
-        "#104281",
-        "#0d366b",
+        "#ee9492",
+        "#e97e7c",
+        "#e35b59",
+        "#dc4342",
+        "#d02e2d",
+        "#bd2a29",
+        "#a52625",
+        "#8e2221",
+        "#7a1d1c",
+        "#5c1716",
     ],
     "dark": [
-        "#cde2fb",
-        "#b7d3f6",
-        "#9ec5f4",
-        "#86b6ef",
-        "#6da7ec",
-        "#5598e7",
-        "#3987e5",
-        "#2a78d6",
-        "#256abf",
-        "#184f95",
+        "#f7cecd",
+        "#f2adab",
+        "#ee9492",
+        "#e97e7c",
+        "#e35b59",
+        "#dc4342",
+        "#d02e2d",
+        "#bd2a29",
+        "#a52625",
+        "#932424",
     ],
 }
 
 # 量用。0 に近い側が背景に溶ける（連続量なので許容）。
 _SEQUENTIAL = {
-    "light": ["#cde2fb", "#86b6ef", "#3987e5", "#1c5cab", "#0d366b"],
-    "dark": ["#0d366b", "#1c5cab", "#3987e5", "#86b6ef", "#cde2fb"],
+    "light": ["#fbe3e2", "#ee9492", "#dc4342", "#a52625", "#5c1716"],
+    "dark": ["#5c1716", "#a52625", "#dc4342", "#ee9492", "#fbe3e2"],
 }
 
 _CHROME = {
@@ -135,11 +150,14 @@ _CHROME = {
     },
 }
 
-#: 極性の正側に置く色。既定は青。日本の株式慣行に合わせるなら
-#: ``theme.POSITIVE_HUE = "red"`` で反転できる。
-POSITIVE_HUE: Literal["blue", "red"] = "blue"
+#: 極性の正側に置く色。既定は赤（日本の株式慣行では上昇が赤）。
+#: 海外向けに合わせるなら ``theme.POSITIVE_HUE = "blue"`` で反転できる。
+POSITIVE_HUE: Literal["blue", "red"] = "red"
 
-_POLES = {"blue": "#2a78d6", "red": "#e34948"}
+#: 極性の両極に使う色。:func:`diverging_cmap` と plotly 側の colorscale が共有する。
+POLES = {"blue": "#2a78d6", "red": "#e34948"}
+
+_POLES = POLES  # 後方互換のための別名
 
 _mode: Mode = "light"
 
